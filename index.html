@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pet Nanny Dashboard</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
@@ -25,7 +26,7 @@
             background-color: var(--light-bg);
             color: var(--text);
             font-family: 'Segoe UI', system-ui, sans-serif;
-            padding: 20px;
+            padding: 15px;
             min-height: 100vh;
         }
 
@@ -35,29 +36,183 @@
         }
         
         .dashboard-header {
-            text-align: center;
-            margin-bottom: 2rem;
+            margin-bottom: 1.5rem;
             position: relative;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            background: linear-gradient(135deg, #6c5ce7 0%, #007bff 100%);
+            border-radius: 12px;
+            padding: 20px;
+            color: white;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        }
+        
+        .header-content {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            flex: 1;
         }
         
         .dashboard-header h1 {
-            font-weight: 300;
+            font-weight: 700;
             letter-spacing: 1px;
             margin-bottom: 0.5rem;
-            color: var(--accent);
+            color: white;
             font-size: 2.5rem;
+            text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.2);
         }
         
         .dashboard-header p {
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 1.2rem;
+            margin-bottom: 0;
+            font-weight: 300;
+        }
+        
+        .logo-container {
+            margin-left: 15px;
+            display: flex;
+            align-items: center;
+        }
+        
+        .robot-icon {
+            width: 100px;
+            height: 100px;
+            filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.5));
+        }
+        
+        .ai-insights-btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            border-radius: 50px;
+            padding: 10px 20px;
+            color: white;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            transition: all 0.3s ease;
+            margin-left: 15px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .ai-insights-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+        
+        .ai-icon {
+            margin-right: 8px;
+        }
+        
+        /* AI Insights Modal */
+        /* AI Insights Modal - Wider and Less Tall */
+        .ai-modal .modal-dialog {
+            max-width: 700px; /* Wider modal */
+        }
+        
+        .ai-modal .modal-content {
+            border-radius: 16px;
+            overflow: hidden;
+            border: none;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+            max-height: 70vh; /* Reduced height */
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .ai-modal .modal-header {
+            background: linear-gradient(135deg, #6c5ce7 0%, #007bff 100%);
+            color: white;
+            border: none;
+            padding: 15px 20px; /* Reduced padding */
+        }
+        
+        .ai-modal .modal-title {
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            font-size: 1.3rem; /* Slightly smaller title */
+        }
+        
+        .ai-modal .modal-title i {
+            margin-right: 10px;
+            font-size: 1.3rem; /* Slightly smaller icon */
+        }
+        
+        .ai-modal .modal-body {
+            padding: 15px 20px; /* Reduced padding */
+            overflow-y: auto;
+            flex-grow: 1;
+        }
+        
+        .insight-item {
+            margin-bottom: 15px; /* Reduced spacing */
+            padding-bottom: 15px; /* Reduced spacing */
+            border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+        }
+        
+        .insight-item:last-child {
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+        
+        .insight-title {
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 6px; /* Reduced spacing */
+            display: flex;
+            align-items: center;
+            font-size: 1rem; /* Smaller font */
+        }
+        
+        .insight-icon {
+            margin-right: 8px; /* Reduced spacing */
+            color: #007bff;
+            font-size: 1rem; /* Smaller icon */
+        }
+        
+        .insight-content {
+            font-size: 0.9rem; /* Smaller font */
             color: var(--text-muted);
-            font-size: 1.1rem;
+            margin-left: 28px; /* Reduced indentation */
+            line-height: 1.4; /* Tighter line height */
+        }
+
+        .positive {
+            color: #28a745;
+        }
+        
+        .warning {
+            color: #ffc107;
+        }
+
+        /* Compact layout for insights */
+        .insights-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+        }
+        
+        @media (max-width: 768px) {
+            .insights-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .ai-modal .modal-dialog {
+                max-width: 95%;
+                margin: 10px auto;
+            }
         }
         
         .card {
             background-color: var(--card-bg);
             border: 1px solid rgba(0, 0, 0, 0.125);
             border-radius: 12px;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
             transition: all 0.3s ease;
             border-left: 4px solid transparent;
@@ -78,8 +233,8 @@
         }
         
         .card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+            transform: translateY(-3px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.1);
         }
         
         .card:hover::before {
@@ -92,7 +247,7 @@
             border-bottom: 1px solid rgba(0, 0, 0, 0.05);
             font-weight: 500;
             letter-spacing: 0.5px;
-            padding: 1.25rem;
+            padding: 1rem;
             position: relative;
         }
         
@@ -107,30 +262,41 @@
         }
         
         .card-body {
-            padding: 1.5rem;
+            padding: 1.25rem;
         }
         
         .card-body h5 {
             color: var(--text);
             font-weight: 500;
             margin-bottom: 0.5rem;
+            font-size: 0.95rem;
         }
         
         .card-body .text-muted {
             color: var(--text-muted) !important;
         }
         
-        .robot-icon {
-            font-size: 1.8rem;
-            margin-right: 12px;
+        .svg-icon {
+            width: 32px;
+            height: 32px;
+            margin-right: 8px;
             vertical-align: middle;
+            filter: drop-shadow(0 0 4px white);
         }
-        
+
+        .svg-icon-small {
+            width: 20px;
+            height: 20px;
+            margin-right: 8px;
+            vertical-align: middle;
+            filter: drop-shadow(0 0 4px currentColor);
+        }
+
         .progress {
             height: 8px;
             background-color: rgba(0, 0, 0, 0.05);
             border-radius: 4px;
-            margin: 15px 0;
+            margin: 12px 0;
             overflow: visible;
         }
         
@@ -144,18 +310,19 @@
             position: absolute;
             right: -25px;
             top: -5px;
-            font-size: 0.8rem;
+            font-size: 0.75rem;
             color: var(--text);
         }
         
         .badge {
             font-weight: 400;
             letter-spacing: 0.5px;
-            padding: 5px 10px;
+            padding: 4px 8px;
             border-radius: 12px;
             background-color: rgba(0, 123, 255, 0.1);
             color: var(--sanibot-color);
             border: 1px solid rgba(0, 123, 255, 0.2);
+            font-size: 0.8rem;
         }
         
         /* Modal improvements */
@@ -188,40 +355,23 @@
         
         .modal-chart {
             width: 100%;
-            height: 250px;
-            max-height: 50vh; /* Limit to 50% of viewport height */
-            margin: 15px 0;
+            height: 220px;
+            max-height: 40vh;
+            margin: 12px 0;
         }
 
-        /* New styles for side-by-side charts */
         .chart-container {
             display: flex;
             flex-wrap: wrap;
-            gap: 20px;
-            margin: 15px 0;
+            gap: 15px;
+            margin: 12px 0;
         }
 
         .chart-wrapper {
             flex: 1;
-            min-width: 300px;
+            min-width: 280px;
         }
 
-        @media (max-width: 768px) {
-            .modal-chart {
-                height: 200px;
-            }
-            
-            .chart-wrapper {
-                min-width: 100%;
-            }
-        }
-
-        @media (max-width: 576px) {
-            .modal-chart {
-                height: 180px;
-            }
-        }
-        
         /* Text contrast improvements */
         h1, h2, h3, h4, h5, h6 {
             color: var(--text);
@@ -242,31 +392,6 @@
             animation: pulse 2s infinite ease-in-out;
         }
 
-        /* Add to your style section */
-        .svg-icon {
-            width: 36px;
-            height: 36px;
-            margin-right: 10px;
-            vertical-align: middle;
-            filter: drop-shadow(0 0 4px white);
-        }
-
-        .svg-icon-small {
-            width: 24px;
-            height: 24px;
-            margin-right: 10px;
-            vertical-align: middle;
-            filter: drop-shadow(0 0 4px currentColor);
-        }
-
-        .robot-icon {
-            width: 128px;
-            height: 128px;
-            margin-right: 12px;
-            vertical-align: middle;
-            /*filter: drop-shadow(0 0 8px currentColor);*/
-        }
-
         .progress-thin {
             height: 6px;
             background-color: rgba(0, 0, 0, 0.05);
@@ -279,7 +404,7 @@
             content: '°C';
             position: absolute;
             right: -20px;
-            font-size: 0.8rem;
+            font-size: 0.75rem;
             color: var(--text-muted);
         }
 
@@ -287,23 +412,110 @@
         .cpu-safe { color: #28a745; }
         .cpu-warning { color: #ffc107; }
         .cpu-danger { color: #dc3545; }
+        
+        /* Responsive adjustments for tablets */
+        @media (max-width: 992px) {
+            .dashboard-header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            
+            .logo-container {
+                margin-left: 0;
+                margin-top: 15px;
+                align-self: flex-end;
+            }
+            
+            .robot-icon {
+                width: 90px;
+                height: 90px;
+            }
+            
+            .dashboard-header h1 {
+                font-size: 2rem;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+            
+            .dashboard-header {
+                margin-bottom: 1rem;
+                padding: 15px;
+            }
+            
+            .dashboard-header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .dashboard-header p {
+                font-size: 1rem;
+            }
+            
+            .card-body {
+                padding: 1rem;
+            }
+            
+            .modal-chart {
+                height: 200px;
+            }
+            
+            .chart-wrapper {
+                min-width: 100%;
+            }
+            
+            .ai-insights-btn {
+                margin-top: 15px;
+                margin-left: 0;
+            }
+        }
+
+        @media (max-width: 576px) {
+            .modal-chart {
+                height: 180px;
+            }
+            
+            .dashboard-header h1 {
+                font-size: 1.6rem;
+            }
+            
+            .robot-icon {
+                width: 80px;
+                height: 80px;
+            }
+            
+            .ai-modal .modal-body {
+                padding: 15px;
+            }
+            
+            .insight-title {
+                font-size: 1rem;
+            }
+            
+            .insight-content {
+                font-size: 0.9rem;
+                margin-left: 28px;
+            }
+        }
     
     </style>
 </head>
 <body>
     <div class="container">
+        <!-- Updated Header -->
         <div class="dashboard-header">
-            <table class="table table-borderless">
-                <tr>
-                    <td rowspan="2" class="text-end"  style="background-color: transparent;"><img title="logo" alt="Logo" src="assets/icons/logo.svg" class="robot-icon" style="color: var(--sanibot-color)"/></td>
-                    <td class="text-start transparent-bg" colspan="2" style="background-color: transparent;">
-                        <h1 class="pulse">AI PET NANNY</h1>
-                    </td>
-                </tr>
-                <tr>
-                    <td class="text-start transparent-bg"  style="background-color: transparent;">Smart Robotic Care for Happier Life</td>
-                </tr>
-            </table>
+            <div class="header-content">
+                <h1>AI PET NANNY</h1>
+                <p>Smart Robotic Care for Happier Life</p>
+            </div>
+            <div class="logo-container">
+                <img title="logo" alt="Logo" src="assets/icons/logo.svg" class="robot-icon" style="color: white"/>
+                <button type="button" class="ai-insights-btn" data-bs-toggle="modal" data-bs-target="#aiInsightsModal">
+                    <i class="fas fa-brain ai-icon"></i> AI Insights
+                </button>
+            </div>
         </div>
         
         <div class="row">
@@ -332,7 +544,7 @@
                                     style="width: 65%; background-color: var(--sanibot-color)"
                                     aria-valuenow="42" aria-valuemin="30" aria-valuemax="80"></div>
                             </div>
-                            <span class="badge" style="background-color: rgba(0, 123, 255, 0.1); color: var(--sanibot-color); border-color: var(--sanibot-color)">
+                            <span class="badge" style="background-color: rgba(0, 123, 255, 0.1); color: var(--sanibot-color; border-color: var(--sanibot-color)">
                                 42°C
                             </span>
                         </div>
@@ -477,6 +689,71 @@
                             <span class="badge" style="background-color: rgba(0, 123, 255, 0.1); color: var(--mealmate-color); border-color: var(--mealmate-color)">
                                 8h 15m
                             </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI Insights Modal - Modified to be wider and less tall -->
+    <div class="modal fade ai-modal" id="aiInsightsModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-brain"></i> AI Pet Health Insights</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="insights-grid">
+                        <div class="insight-item">
+                            <div class="insight-title">
+                                <i class="fas fa-poop insight-icon"></i>
+                                <span>Poop Analysis</span>
+                            </div>
+                            <div class="insight-content positive">
+                                Healthy brown color indicates good digestion and nutrition.
+                            </div>
+                        </div>
+                        
+                        <div class="insight-item">
+                            <div class="insight-title">
+                                <i class="fas fa-walking insight-icon"></i>
+                                <span>Exercise Level</span>
+                            </div>
+                            <div class="insight-content">
+                                1.2 miles of walking today is excellent for health.
+                            </div>
+                        </div>
+                        
+                        <div class="insight-item">
+                            <div class="insight-title">
+                                <i class="fas fa-gamepad insight-icon"></i>
+                                <span>Play Activity</span>
+                            </div>
+                            <div class="insight-content">
+                                45 minutes of play provides good mental stimulation.
+                            </div>
+                        </div>
+                        
+                        <div class="insight-item">
+                            <div class="insight-title">
+                                <i class="fas fa-utensils insight-icon"></i>
+                                <span>Nutrition Alert</span>
+                            </div>
+                            <div class="insight-content warning">
+                                Food level is at 35%. Consider refilling soon.
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="insight-item">
+                        <div class="insight-title">
+                            <i class="fas fa-heartbeat insight-icon"></i>
+                            <span>Overall Health</span>
+                        </div>
+                        <div class="insight-content positive">
+                            Your pet appears to be in excellent health. Keep up the good care!
                         </div>
                     </div>
                 </div>
@@ -681,7 +958,7 @@
                             tension: 0.3,
                             fill: true,
                             pointBackgroundColor: '#fff',
-                            pointBorderColor: 'rgba(40, 167, 69, 1)'
+                            pointBorderColor: 'rgagra(40, 167, 69, 1)'
                         }]
                     },
                     options: {
@@ -755,7 +1032,7 @@
                 });
             });
 
-            // Pawpal Charts
+            // Pawpal Charts - Fixed
             document.getElementById('pawpalModal').addEventListener('shown.bs.modal', function() {
                 new Chart(document.getElementById('playtimeChart'), {
                     type: 'doughnut',
@@ -764,7 +1041,6 @@
                         datasets: [{
                             data: [50, 35, 15],
                             backgroundColor: [
-                                //'rgba(255, 193, 7, 0.8)',
                                 'rgba(255, 159, 64, 0.8)',
                                 'rgba(255, 99, 132, 0.8)',
                                 'rgba(153, 102, 255, 0.8)'
@@ -840,7 +1116,7 @@
                 });
             });
 
-            // Mealmate Charts
+            // Mealmate Charts - Fixed
             document.getElementById('mealmateModal').addEventListener('shown.bs.modal', function() {
                 new Chart(document.getElementById('feedingChart'), {
                     type: 'bar',
