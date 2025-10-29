@@ -1,0 +1,1286 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EduMinat - Platform Kokurikulum Seronok!</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --primary: #6A4CFF;
+            --secondary: #FF6B8B;
+            --accent: #00D4FF;
+            --success: #2ECC71;
+            --warning: #FF9F43;
+            --light: #F9F7FF;
+            --dark: #2D3047;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Comic Neue', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #F5F7FF 0%, #E6F0FF 100%);
+            color: var(--dark);
+            min-height: 100vh;
+        }
+        
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 15px;
+        }
+        
+        /* Header Styles */
+        header {
+            background: white;
+            padding: 1rem 0;
+            box-shadow: 0 4px 12px rgba(107, 76, 255, 0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: var(--primary);
+            cursor: pointer;
+        }
+        
+        .logo i {
+            font-size: 2rem;
+            color: var(--secondary);
+        }
+        
+        .logo span {
+            background: linear-gradient(45deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .user-profile {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: var(--light);
+            padding: 8px 15px;
+            border-radius: 50px;
+        }
+        
+        .avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(45deg, var(--primary), var(--accent));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+        }
+        
+        /* Dashboard Layout */
+        .dashboard {
+            display: grid;
+            grid-template-columns: 250px 1fr;
+            gap: 20px;
+            padding: 2rem 0;
+        }
+        
+        /* Sidebar */
+        .sidebar {
+            background: white;
+            border-radius: 20px;
+            padding: 1.5rem;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+            height: fit-content;
+        }
+        
+        .sidebar-menu {
+            list-style: none;
+            margin-top: 1.5rem;
+        }
+        
+        .sidebar-menu li {
+            margin-bottom: 1rem;
+        }
+        
+        .sidebar-menu a {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--dark);
+            text-decoration: none;
+            padding: 10px;
+            border-radius: 10px;
+            transition: all 0.3s ease;
+        }
+        
+        .sidebar-menu a:hover, .sidebar-menu a.active {
+            background: var(--light);
+            color: var(--primary);
+        }
+        
+        .sidebar-menu i {
+            width: 20px;
+            text-align: center;
+        }
+        
+        /* Main Content */
+        .main-content {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        /* Content Sections */
+        .content-section {
+            display: none;
+        }
+        
+        .content-section.active {
+            display: block;
+        }
+        
+        /* Welcome Banner */
+        .welcome-banner {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+            border-radius: 20px;
+            padding: 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 10px 20px rgba(107, 76, 255, 0.2);
+        }
+        
+        .welcome-text h2 {
+            font-size: 1.8rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .welcome-illustration {
+            font-size: 4rem;
+        }
+        
+        /* Stats Cards */
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        
+        .stat-card {
+            background: white;
+            border-radius: 15px;
+            padding: 1.5rem;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+            text-align: center;
+            transition: transform 0.3s ease;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .stat-icon {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1rem;
+            font-size: 1.5rem;
+            color: white;
+        }
+        
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+        
+        .stat-label {
+            color: #666;
+            font-size: 0.9rem;
+        }
+        
+        /* Progress Section */
+        .progress-section {
+            background: white;
+            border-radius: 20px;
+            padding: 1.5rem;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+        }
+        
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+        
+        .section-title {
+            font-size: 1.5rem;
+            color: var(--primary);
+        }
+        
+        .view-all {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+        }
+        
+        .courses-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 20px;
+        }
+        
+        .course-card {
+            background: var(--light);
+            border-radius: 15px;
+            overflow: hidden;
+            transition: transform 0.3s ease;
+        }
+        
+        .course-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .course-header {
+            height: 100px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 2.5rem;
+        }
+        
+        .course-content {
+            padding: 1.2rem;
+        }
+        
+        .course-title {
+            font-size: 1.2rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .course-info {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.9rem;
+            color: #666;
+            margin-bottom: 1rem;
+        }
+        
+        .progress-container {
+            margin-bottom: 1rem;
+        }
+        
+        .progress-bar {
+            height: 8px;
+            background: #E0E0E0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        .progress {
+            height: 100%;
+            border-radius: 4px;
+        }
+        
+        .progress-text {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        .btn {
+            display: block;
+            width: 100%;
+            padding: 10px;
+            border: none;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            text-align: center;
+            text-decoration: none;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #5A3FE0;
+        }
+        
+        /* Categories Section */
+        .categories {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 1rem;
+        }
+        
+        .category-card {
+            background: white;
+            border-radius: 15px;
+            padding: 1.5rem 1rem;
+            text-align: center;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+            transition: transform 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .category-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .category-icon {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1rem;
+            font-size: 1.5rem;
+            color: white;
+        }
+        
+        /* Badges Section */
+        .badges-container {
+            display: flex;
+            gap: 15px;
+            overflow-x: auto;
+            padding: 10px 5px;
+            margin-top: 1rem;
+        }
+        
+        .badge {
+            background: white;
+            border-radius: 15px;
+            padding: 1.5rem 1rem;
+            text-align: center;
+            min-width: 150px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+        }
+        
+        .badge-icon {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1rem;
+            font-size: 1.5rem;
+            color: white;
+            background: linear-gradient(45deg, #FFD166, #FF9F43);
+        }
+        
+        .badge.locked .badge-icon {
+            background: #E0E0E0;
+            color: #B0B0B0;
+        }
+        
+        /* Explore Courses Section */
+        .filter-options {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+        }
+        
+        .filter-btn {
+            background: white;
+            border: 2px solid var(--light);
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .filter-btn.active {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+        
+        /* Achievements Section */
+        .achievement-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        
+        .achievement-card {
+            background: white;
+            border-radius: 15px;
+            padding: 1.5rem;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+        }
+        
+        .achievement-icon {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            color: white;
+            flex-shrink: 0;
+        }
+        
+        /* PAJSK Progress Section */
+        .pajsk-chart {
+            background: white;
+            border-radius: 15px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+        }
+        
+        .chart-placeholder {
+            height: 200px;
+            background: var(--light);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--primary);
+            font-weight: bold;
+            margin: 1rem 0;
+        }
+        
+        /* Settings Section */
+        .settings-option {
+            background: white;
+            border-radius: 15px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+        }
+        
+        .settings-option h3 {
+            margin-bottom: 1rem;
+            color: var(--primary);
+        }
+        
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
+        }
+        
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 24px;
+        }
+        
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        
+        input:checked + .slider {
+            background-color: var(--primary);
+        }
+        
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+        
+        /* Responsive Design */
+        @media (max-width: 900px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+            }
+            
+            .sidebar {
+                display: none;
+            }
+        }
+        
+        @media (max-width: 600px) {
+            .welcome-banner {
+                flex-direction: column;
+                text-align: center;
+                gap: 1rem;
+            }
+            
+            .stats {
+                grid-template-columns: 1fr 1fr;
+            }
+            
+            .courses-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header>
+        <div class="container">
+            <div class="header-content">
+                <div class="logo" id="home-link">
+                    <i class="fas fa-rocket"></i>
+                    <span>EduMinat</span>
+                </div>
+                <div class="user-profile">
+                    <div class="avatar">A</div>
+                    <div>
+                        <div class="user-name">Mujahid, 11</div>
+                        <div class="user-points">245 Mata</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Dashboard -->
+    <div class="container">
+        <div class="dashboard">
+            <!-- Sidebar -->
+            <div class="sidebar">
+                <div class="sidebar-menu">
+                    <li><a href="#" class="menu-link active" data-target="dashboard-content"><i class="fas fa-home"></i> Dashboard</a></li>
+                    <li><a href="#" class="menu-link" data-target="explore-courses"><i class="fas fa-compass"></i> Teroka Kursus</a></li>
+                    <li><a href="#" class="menu-link" data-target="achievements"><i class="fas fa-trophy"></i> Pencapaian</a></li>
+                    <li><a href="#" class="menu-link" data-target="pajsk-progress"><i class="fas fa-chart-line"></i> Kemajuan PAJSK</a></li>
+                    <li><a href="#" class="menu-link" data-target="settings"><i class="fas fa-cog"></i> Tetapan</a></li>
+                </div>
+            </div>
+
+            <!-- Main Content -->
+            <div class="main-content">
+                <!-- Dashboard Content -->
+                <div id="dashboard-content" class="content-section active">
+                    <!-- Welcome Banner -->
+                    <div class="welcome-banner">
+                        <div class="welcome-text">
+                            <h2>Helo Mujahid! Apa yang anda ingin pelajari hari ini?</h2>
+                            <p>Anda mempunyai 3 kursus aktif. Teruskan usaha anda!</p>
+                        </div>
+                        <div class="welcome-illustration">
+                            <i class="fas fa-graduation-cap"></i>
+                        </div>
+                    </div>
+
+                    <!-- Stats Cards -->
+                    <div class="stats">
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background: var(--primary);">
+                                <i class="fas fa-book-open"></i>
+                            </div>
+                            <div class="stat-value">5</div>
+                            <div class="stat-label">Kursus Diambil</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background: var(--success);">
+                                <i class="fas fa-check-circle"></i>
+                            </div>
+                            <div class="stat-value">2</div>
+                            <div class="stat-label">Kursus Selesai</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background: var(--warning);">
+                                <i class="fas fa-star"></i>
+                            </div>
+                            <div class="stat-value">85</div>
+                            <div class="stat-label">Mata PAJSK</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background: var(--secondary);">
+                                <i class="fas fa-medal"></i>
+                            </div>
+                            <div class="stat-value">7</div>
+                            <div class="stat-label">Lencana</div>
+                        </div>
+                    </div>
+
+                    <!-- Current Courses -->
+                    <div class="progress-section">
+                        <div class="section-header">
+                            <h2 class="section-title">Kursus Aktif Saya</h2>
+                            <a href="#" class="view-all" id="view-all-courses">Lihat Semua</a>
+                        </div>
+                        <div class="courses-grid">
+                            <div class="course-card">
+                                <div class="course-header" style="background: #6A4CFF;">
+                                    <i class="fas fa-laptop-code"></i>
+                                </div>
+                                <div class="course-content">
+                                    <h3 class="course-title">Pengaturcaraan Python</h3>
+                                    <div class="course-info">
+                                        <span><i class="far fa-clock"></i> 6 Minggu</span>
+                                        <span>15/20 PAJSK</span>
+                                    </div>
+                                    <div class="progress-container">
+                                        <div class="progress-bar">
+                                            <div class="progress" style="width: 65%; background: #6A4CFF;"></div>
+                                        </div>
+                                        <div class="progress-text">
+                                            <span>Kemajuan</span>
+                                            <span>65%</span>
+                                        </div>
+                                    </div>
+                                    <a href="#" class="btn btn-primary">Teruskan Belajar</a>
+                                </div>
+                            </div>
+                            <div class="course-card">
+                                <div class="course-header" style="background: #FF6B8B;">
+                                    <i class="fas fa-guitar"></i>
+                                </div>
+                                <div class="course-content">
+                                    <h3 class="course-title">Asas Gitar Moden</h3>
+                                    <div class="course-info">
+                                        <span><i class="far fa-clock"></i> 8 Minggu</span>
+                                        <span>6/20 PAJSK</span>
+                                    </div>
+                                    <div class="progress-container">
+                                        <div class="progress-bar">
+                                            <div class="progress" style="width: 30%; background: #FF6B8B;"></div>
+                                        </div>
+                                        <div class="progress-text">
+                                            <span>Kemajuan</span>
+                                            <span>30%</span>
+                                        </div>
+                                    </div>
+                                    <a href="#" class="btn btn-primary">Teruskan Belajar</a>
+                                </div>
+                            </div>
+                            <div class="course-card">
+                                <div class="course-header" style="background: #00D4FF;">
+                                    <i class="fas fa-robot"></i>
+                                </div>
+                                <div class="course-content">
+                                    <h3 class="course-title">Robotik Asas</h3>
+                                    <div class="course-info">
+                                        <span><i class="far fa-clock"></i> 5 Minggu</span>
+                                        <span>8/20 PAJSK</span>
+                                    </div>
+                                    <div class="progress-container">
+                                        <div class="progress-bar">
+                                            <div class="progress" style="width: 40%; background: #00D4FF;"></div>
+                                        </div>
+                                        <div class="progress-text">
+                                            <span>Kemajuan</span>
+                                            <span>40%</span>
+                                        </div>
+                                    </div>
+                                    <a href="#" class="btn btn-primary">Teruskan Belajar</a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Categories -->
+                    <div class="progress-section">
+                        <div class="section-header">
+                            <h2 class="section-title">Teroka Mengikut Minat</h2>
+                            <a href="#" class="view-all" id="view-all-categories">Semua Kategori</a>
+                        </div>
+                        <div class="categories">
+                            <div class="category-card">
+                                <div class="category-icon" style="background: #6A4CFF;">
+                                    <i class="fas fa-laptop-code"></i>
+                                </div>
+                                <div class="category-name">Teknologi</div>
+                            </div>
+                            <div class="category-card">
+                                <div class="category-icon" style="background: #FF6B8B;">
+                                    <i class="fas fa-palette"></i>
+                                </div>
+                                <div class="category-name">Seni & Kreatif</div>
+                            </div>
+                            <div class="category-card">
+                                <div class="category-icon" style="background: #00D4FF;">
+                                    <i class="fas fa-dumbbell"></i>
+                                </div>
+                                <div class="category-name">Sukan</div>
+                            </div>
+                            <div class="category-card">
+                                <div class="category-icon" style="background: #2ECC71;">
+                                    <i class="fas fa-seedling"></i>
+                                </div>
+                                <div class="category-name">Kemahiran Hidup</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Badges -->
+                    <div class="progress-section">
+                        <div class="section-header">
+                            <h2 class="section-title">Lencana Saya</h2>
+                            <a href="#" class="view-all" id="view-all-badges">Semua Lencana</a>
+                        </div>
+                        <div class="badges-container">
+                            <div class="badge">
+                                <div class="badge-icon">
+                                    <i class="fas fa-star"></i>
+                                </div>
+                                <div class="badge-name">Pemula</div>
+                            </div>
+                            <div class="badge">
+                                <div class="badge-icon">
+                                    <i class="fas fa-rocket"></i>
+                                </div>
+                                <div class="badge-name">Pelajar Aktif</div>
+                            </div>
+                            <div class="badge">
+                                <div class="badge-icon">
+                                    <i class="fas fa-code"></i>
+                                </div>
+                                <div class="badge-name">Pemaju Python</div>
+                            </div>
+                            <div class="badge locked">
+                                <div class="badge-icon">
+                                    <i class="fas fa-music"></i>
+                                </div>
+                                <div class="badge-name">Pemuzik</div>
+                            </div>
+                            <div class="badge locked">
+                                <div class="badge-icon">
+                                    <i class="fas fa-robot"></i>
+                                </div>
+                                <div class="badge-name">Pakar Robotik</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Explore Courses Content -->
+                <div id="explore-courses" class="content-section">
+                    <div class="welcome-banner">
+                        <div class="welcome-text">
+                            <h2>Teroka Semua Kursus Menarik</h2>
+                            <p>Temui kursus baharu berdasarkan minat anda!</p>
+                        </div>
+                        <div class="welcome-illustration">
+                            <i class="fas fa-compass"></i>
+                        </div>
+                    </div>
+
+                    <div class="progress-section">
+                        <div class="section-header">
+                            <h2 class="section-title">Semua Kursus Tersedia</h2>
+                        </div>
+                        
+                        <div class="filter-options">
+                            <button class="filter-btn active" data-filter="all">Semua</button>
+                            <button class="filter-btn" data-filter="teknologi">Teknologi</button>
+                            <button class="filter-btn" data-filter="seni">Seni & Kreatif</button>
+                            <button class="filter-btn" data-filter="sukan">Sukan</button>
+                            <button class="filter-btn" data-filter="kemahiran">Kemahiran Hidup</button>
+                        </div>
+                        
+                        <div class="courses-grid">
+                            <div class="course-card" data-category="teknologi">
+                                <div class="course-header" style="background: #6A4CFF;">
+                                    <i class="fas fa-laptop-code"></i>
+                                </div>
+                                <div class="course-content">
+                                    <h3 class="course-title">Asas Pembangunan Web</h3>
+                                    <div class="course-info">
+                                        <span><i class="far fa-clock"></i> 8 Minggu</span>
+                                        <span>20 PAJSK</span>
+                                    </div>
+                                    <p>Belajar HTML, CSS dan JavaScript untuk membina laman web pertama anda.</p>
+                                    <a href="#" class="btn btn-primary">Mula Sekarang</a>
+                                </div>
+                            </div>
+                            <div class="course-card" data-category="seni">
+                                <div class="course-header" style="background: #FF6B8B;">
+                                    <i class="fas fa-paint-brush"></i>
+                                </div>
+                                <div class="course-content">
+                                    <h3 class="course-title">Lukisan Digital</h3>
+                                    <div class="course-info">
+                                        <span><i class="far fa-clock"></i> 6 Minggu</span>
+                                        <span>15 PAJSK</span>
+                                    </div>
+                                    <p>Pelajari teknik asas lukisan digital menggunakan perisian percuma.</p>
+                                    <a href="#" class="btn btn-primary">Mula Sekarang</a>
+                                </div>
+                            </div>
+                            <div class="course-card" data-category="sukan">
+                                <div class="course-header" style="background: #00D4FF;">
+                                    <i class="fas fa-basketball-ball"></i>
+                                </div>
+                                <div class="course-content">
+                                    <h3 class="course-title">Asas Bola Keranjang</h3>
+                                    <div class="course-info">
+                                        <span><i class="far fa-clock"></i> 4 Minggu</span>
+                                        <span>10 PAJSK</span>
+                                    </div>
+                                    <p>Kuasaikan kemahiran asas bola keranjang dan teknik permainan.</p>
+                                    <a href="#" class="btn btn-primary">Mula Sekarang</a>
+                                </div>
+                            </div>
+                            <div class="course-card" data-category="kemahiran">
+                                <div class="course-header" style="background: #2ECC71;">
+                                    <i class="fas fa-utensils"></i>
+                                </div>
+                                <div class="course-content">
+                                    <h3 class="course-title">Memasak Asas</h3>
+                                    <div class="course-info">
+                                        <span><i class="far fa-clock"></i> 5 Minggu</span>
+                                        <span>12 PAJSK</span>
+                                    </div>
+                                    <p>Belajar menyediakan hidangan sihat dan sedap untuk pemula.</p>
+                                    <a href="#" class="btn btn-primary">Mula Sekarang</a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Achievements Content -->
+                <div id="achievements" class="content-section">
+                    <div class="welcome-banner">
+                        <div class="welcome-text">
+                            <h2>Pencapaian dan Lencana Anda</h2>
+                            <p>Kumpulkan lebih banyak lencana dengan menyelesaikan kursus!</p>
+                        </div>
+                        <div class="welcome-illustration">
+                            <i class="fas fa-trophy"></i>
+                        </div>
+                    </div>
+
+                    <div class="progress-section">
+                        <div class="section-header">
+                            <h2 class="section-title">Lencana Dikumpulkan</h2>
+                        </div>
+                        
+                        <div class="badges-container">
+                            <div class="badge">
+                                <div class="badge-icon" style="background: #6A4CFF;">
+                                    <i class="fas fa-star"></i>
+                                </div>
+                                <div class="badge-name">Pemula</div>
+                                <div class="badge-desc">Daftar kursus pertama</div>
+                            </div>
+                            <div class="badge">
+                                <div class="badge-icon" style="background: #FF6B8B;">
+                                    <i class="fas fa-rocket"></i>
+                                </div>
+                                <div class="badge-name">Pelajar Aktif</div>
+                                <div class="badge-desc">Selesaikan 5 modul</div>
+                            </div>
+                            <div class="badge">
+                                <div class="badge-icon" style="background: #00D4FF;">
+                                    <i class="fas fa-code"></i>
+                                </div>
+                                <div class="badge-name">Pemaju Python</div>
+                                <div class="badge-desc">Selesaikan kursus Python</div>
+                            </div>
+                            <div class="badge locked">
+                                <div class="badge-icon">
+                                    <i class="fas fa-music"></i>
+                                </div>
+                                <div class="badge-name">Pemuzik</div>
+                                <div class="badge-desc">Selesaikan kursus muzik</div>
+                            </div>
+                            <div class="badge locked">
+                                <div class="badge-icon">
+                                    <i class="fas fa-robot"></i>
+                                </div>
+                                <div class="badge-name">Pakar Robotik</div>
+                                <div class="badge-desc">Selesaikan kursus robotik</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="progress-section">
+                        <div class="section-header">
+                            <h2 class="section-title">Pencapaian Terkini</h2>
+                        </div>
+                        
+                        <div class="achievement-list">
+                            <div class="achievement-card">
+                                <div class="achievement-icon" style="background: #6A4CFF;">
+                                    <i class="fas fa-book"></i>
+                                </div>
+                                <div>
+                                    <h3>Pembaca Tekun</h3>
+                                    <p>Anda telah membaca 10 modul kursus</p>
+                                    <small>Diperoleh: 15 Mac 2025</small>
+                                </div>
+                            </div>
+                            <div class="achievement-card">
+                                <div class="achievement-icon" style="background: #FF6B8B;">
+                                    <i class="fas fa-bolt"></i>
+                                </div>
+                                <div>
+                                    <h3>Pantas Menyelesaikan</h3>
+                                    <p>Selesaikan kursus dalam masa 2 minggu</p>
+                                    <small>Diperoleh: 2 April 2025</small>
+                                </div>
+                            </div>
+                            <div class="achievement-card">
+                                <div class="achievement-icon" style="background: #00D4FF;">
+                                    <i class="fas fa-code"></i>
+                                </div>
+                                <div>
+                                    <h3>Pemaju Python</h3>
+                                    <p>Lulus kursus Pengaturcaraan Python</p>
+                                    <small>Diperoleh: 10 April 2025</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- PAJSK Progress Content -->
+                <div id="pajsk-progress" class="content-section">
+                    <div class="welcome-banner">
+                        <div class="welcome-text">
+                            <h2>Kemajuan PAJSK Anda</h2>
+                            <p>Lihat perkembangan mata kokurikulum anda!</p>
+                        </div>
+                        <div class="welcome-illustration">
+                            <i class="fas fa-chart-line"></i>
+                        </div>
+                    </div>
+
+                    <div class="pajsk-chart">
+                        <h2 class="section-title">Statistik PAJSK</h2>
+                        <div class="chart-placeholder">
+                            Graf Perkembangan Mata PAJSK
+                        </div>
+                        <div class="stats">
+                            <div class="stat-card">
+                                <div class="stat-icon" style="background: var(--primary);">
+                                    <i class="fas fa-bullseye"></i>
+                                </div>
+                                <div class="stat-value">85/100</div>
+                                <div class="stat-label">Mata Semasa</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon" style="background: var(--success);">
+                                    <i class="fas fa-trophy"></i>
+                                </div>
+                                <div class="stat-value">15</div>
+                                <div class="stat-label">Mata Diperlukan</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon" style="background: var(--warning);">
+                                    <i class="fas fa-calendar"></i>
+                                </div>
+                                <div class="stat-value">8 Minggu</div>
+                                <div class="stat-label">Masa Tinggal</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="progress-section">
+                        <div class="section-header">
+                            <h2 class="section-title">Perincian Mata PAJSK</h2>
+                        </div>
+                        
+                        <div class="courses-grid">
+                            <div class="course-card">
+                                <div class="course-header" style="background: #6A4CFF;">
+                                    <i class="fas fa-laptop-code"></i>
+                                </div>
+                                <div class="course-content">
+                                    <h3 class="course-title">Pengaturcaraan Python</h3>
+                                    <div class="course-info">
+                                        <span>15/20 PAJSK</span>
+                                        <span>65% Selesai</span>
+                                    </div>
+                                    <div class="progress-container">
+                                        <div class="progress-bar">
+                                            <div class="progress" style="width: 65%; background: #6A4CFF;"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="course-card">
+                                <div class="course-header" style="background: #FF6B8B;">
+                                    <i class="fas fa-guitar"></i>
+                                </div>
+                                <div class="course-content">
+                                    <h3 class="course-title">Asas Gitar Moden</h3>
+                                    <div class="course-info">
+                                        <span>6/20 PAJSK</span>
+                                        <span>30% Selesai</span>
+                                    </div>
+                                    <div class="progress-container">
+                                        <div class="progress-bar">
+                                            <div class="progress" style="width: 30%; background: #FF6B8B;"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="course-card">
+                                <div class="course-header" style="background: #00D4FF;">
+                                    <i class="fas fa-robot"></i>
+                                </div>
+                                <div class="course-content">
+                                    <h3 class="course-title">Robotik Asas</h3>
+                                    <div class="course-info">
+                                        <span>8/20 PAJSK</span>
+                                        <span>40% Selesai</span>
+                                    </div>
+                                    <div class="progress-container">
+                                        <div class="progress-bar">
+                                            <div class="progress" style="width: 40%; background: #00D4FF;"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Settings Content -->
+                <div id="settings" class="content-section">
+                    <div class="welcome-banner">
+                        <div class="welcome-text">
+                            <h2>Tetapan Akaun Anda</h2>
+                            <p>Urus keutamaan dan maklumat peribadi anda</p>
+                        </div>
+                        <div class="welcome-illustration">
+                            <i class="fas fa-cog"></i>
+                        </div>
+                    </div>
+
+                    <div class="settings-option">
+                        <h3>Maklumat Profil</h3>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                            <div>
+                                <label>Nama Penuh</label>
+                                <input type="text" value="Mujahid Afeef bin Mohd Ariff" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; margin-top: 5px;">
+                            </div>
+                            <div>
+                                <label>Umur</label>
+                                <input type="number" value="11" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; margin-top: 5px;">
+                            </div>
+                            <div>
+                                <label>Emel</label>
+                                <input type="email" value="mujahid@eduminat.my" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; margin-top: 5px;">
+                            </div>
+                            <div>
+                                <label>Sekolah</label>
+                                <input type="text" value="SK Putrajaya Presint 11(2)" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; margin-top: 5px;">
+                            </div>
+                        </div>
+                        <button class="btn btn-primary" style="margin-top: 15px; width: auto;">Kemaskini Profil</button>
+                    </div>
+
+                    <div class="settings-option">
+                        <h3>Keutamaan Pembelajaran</h3>
+                        <div style="display: flex; flex-direction: column; gap: 15px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <span>Hantar notifikasi untuk aktiviti baru</span>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" checked>
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <span>Pengingat harian untuk belajar</span>
+                                <label class="toggle-switch">
+                                    <input type="checkbox">
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <span>Paparkan pencapaian secara umum</span>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" checked>
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-option">
+                        <h3>Bahasa</h3>
+                        <div style="display: flex; gap: 15px;">
+                            <button class="filter-btn active">Bahasa Malaysia</button>
+                            <button class="filter-btn">English</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Navigation functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            // Menu navigation
+            const menuLinks = document.querySelectorAll('.menu-link');
+            const contentSections = document.querySelectorAll('.content-section');
+            
+            menuLinks.forEach(link => {
+                link.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    
+                    // Remove active class from all links and sections
+                    menuLinks.forEach(l => l.classList.remove('active'));
+                    contentSections.forEach(section => section.classList.remove('active'));
+                    
+                    // Add active class to clicked link
+                    this.classList.add('active');
+                    
+                    // Show the corresponding content section
+                    const targetId = this.getAttribute('data-target');
+                    document.getElementById(targetId).classList.add('active');
+                });
+            });
+            
+            // Home logo link
+            document.getElementById('home-link').addEventListener('click', function() {
+                menuLinks.forEach(l => l.classList.remove('active'));
+                contentSections.forEach(section => section.classList.remove('active'));
+                
+                document.querySelector('.menu-link[data-target="dashboard-content"]').classList.add('active');
+                document.getElementById('dashboard-content').classList.add('active');
+            });
+            
+            // View all links
+            document.getElementById('view-all-courses').addEventListener('click', function(e) {
+                e.preventDefault();
+                menuLinks.forEach(l => l.classList.remove('active'));
+                contentSections.forEach(section => section.classList.remove('active'));
+                
+                document.querySelector('.menu-link[data-target="explore-courses"]').classList.add('active');
+                document.getElementById('explore-courses').classList.add('active');
+            });
+            
+            document.getElementById('view-all-categories').addEventListener('click', function(e) {
+                e.preventDefault();
+                menuLinks.forEach(l => l.classList.remove('active'));
+                contentSections.forEach(section => section.classList.remove('active'));
+                
+                document.querySelector('.menu-link[data-target="explore-courses"]').classList.add('active');
+                document.getElementById('explore-courses').classList.add('active');
+            });
+            
+            document.getElementById('view-all-badges').addEventListener('click', function(e) {
+                e.preventDefault();
+                menuLinks.forEach(l => l.classList.remove('active'));
+                contentSections.forEach(section => section.classList.remove('active'));
+                
+                document.querySelector('.menu-link[data-target="achievements"]').classList.add('active');
+                document.getElementById('achievements').classList.add('active');
+            });
+            
+            // Course card interaction
+            const courseCards = document.querySelectorAll('.course-card');
+            courseCards.forEach(card => {
+                card.addEventListener('click', function(e) {
+                    if (!e.target.classList.contains('btn')) {
+                        const courseTitle = this.querySelector('.course-title').textContent;
+                        alert(`Membuka kursus: ${courseTitle}`);
+                    }
+                });
+            });
+            
+            // Category card interaction
+            const categoryCards = document.querySelectorAll('.category-card');
+            categoryCards.forEach(card => {
+                card.addEventListener('click', function() {
+                    const categoryName = this.querySelector('.category-name').textContent;
+                    // Navigate to explore courses and filter by category
+                    menuLinks.forEach(l => l.classList.remove('active'));
+                    contentSections.forEach(section => section.classList.remove('active'));
+                    
+                    document.querySelector('.menu-link[data-target="explore-courses"]').classList.add('active');
+                    document.getElementById('explore-courses').classList.add('active');
+                    
+                    alert(`Memaparkan kursus dalam kategori: ${categoryName}`);
+                });
+            });
+            
+            // Badge interaction
+            const badges = document.querySelectorAll('.badge');
+            badges.forEach(badge => {
+                badge.addEventListener('click', function() {
+                    const badgeName = this.querySelector('.badge-name').textContent;
+                    if (this.classList.contains('locked')) {
+                        alert(`Lencana "${badgeName}" masih dikunci. Teruskan belajar untuk membukanya!`);
+                    } else {
+                        alert(`Tahniah! Anda telah mendapat lencana "${badgeName}"!`);
+                    }
+                });
+            });
+            
+            // Filter buttons in explore courses
+            const filterButtons = document.querySelectorAll('.filter-btn');
+            const courseCardsAll = document.querySelectorAll('.course-card[data-category]');
+            
+            filterButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    // Remove active class from all buttons
+                    filterButtons.forEach(btn => btn.classList.remove('active'));
+                    // Add active class to clicked button
+                    this.classList.add('active');
+                    
+                    const filterValue = this.getAttribute('data-filter');
+                    
+                    courseCardsAll.forEach(card => {
+                        if (filterValue === 'all' || card.getAttribute('data-category') === filterValue) {
+                            card.style.display = 'block';
+                        } else {
+                            card.style.display = 'none';
+                        }
+                    });
+                });
+            });
+        });
+    </script>
+</body>
+</html>
