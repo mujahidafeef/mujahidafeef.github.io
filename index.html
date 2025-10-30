@@ -94,6 +94,17 @@
             font-weight: bold;
         }
         
+        /* Mobile Menu Button */
+        .mobile-menu-btn {
+            display: none;
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            color: var(--primary);
+            cursor: pointer;
+            padding: 5px;
+        }
+
         /* Dashboard Layout */
         .dashboard {
             display: grid;
@@ -139,6 +150,63 @@
         .sidebar-menu i {
             width: 20px;
             text-align: center;
+        }
+        
+        /* Mobile Navigation Overlay */
+        .mobile-nav-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 998;
+        }
+
+        .mobile-nav-overlay.active {
+            display: block;
+        }
+
+        .mobile-sidebar {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: -280px;
+            width: 280px;
+            height: 100%;
+            background: white;
+            z-index: 999;
+            transition: left 0.3s ease;
+            overflow-y: auto;
+            padding: 1.5rem;
+            box-shadow: 5px 0 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .mobile-sidebar.active {
+            left: 0;
+        }
+
+        .mobile-sidebar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid #eee;
+        }
+
+        .mobile-sidebar .sidebar-menu {
+            margin-top: 0;
+        }
+
+        .close-mobile-menu {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            color: var(--primary);
+            cursor: pointer;
+            padding: 5px;
         }
         
         /* Main Content */
@@ -762,6 +830,14 @@
             .sidebar {
                 display: none;
             }
+            
+            .mobile-menu-btn {
+                display: block;
+            }
+            
+            .mobile-sidebar {
+                display: block;
+            }
         }
         
         @media (max-width: 600px) {
@@ -769,6 +845,14 @@
                 flex-direction: column;
                 text-align: center;
                 gap: 1rem;
+            }
+            
+            .welcome-text h2 {
+                font-size: 1.5rem;
+            }
+            
+            .welcome-illustration {
+                font-size: 3rem;
             }
             
             .stats {
@@ -786,6 +870,33 @@
             .detail-actions {
                 flex-direction: column;
             }
+            
+            .detail-title {
+                font-size: 1.8rem;
+            }
+            
+            .detail-meta {
+                flex-direction: column;
+                gap: 1rem;
+            }
+            
+            .user-profile .user-name {
+                display: none;
+            }
+        }
+        
+        @media (max-width: 400px) {
+            .stats {
+                grid-template-columns: 1fr;
+            }
+            
+            .competition-categories {
+                grid-template-columns: 1fr;
+            }
+            
+            .logo span {
+                font-size: 1.5rem;
+            }
         }
     </style>
 </head>
@@ -794,6 +905,9 @@
     <header>
         <div class="container">
             <div class="header-content">
+                <button class="mobile-menu-btn" id="mobile-menu-toggle">
+                    <i class="fas fa-bars"></i>
+                </button>
                 <div class="logo" id="home-link">
                     <i class="fas fa-rocket"></i>
                     <span>EduMinat</span>
@@ -809,10 +923,34 @@
         </div>
     </header>
 
+    <!-- Mobile Navigation Overlay -->
+    <div class="mobile-nav-overlay" id="mobile-nav-overlay"></div>
+
+    <!-- Mobile Sidebar -->
+    <div class="mobile-sidebar" id="mobile-sidebar">
+        <div class="mobile-sidebar-header">
+            <div class="logo">
+                <i class="fas fa-rocket"></i>
+                <span>EduMinat</span>
+            </div>
+            <button class="close-mobile-menu" id="close-mobile-menu">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="sidebar-menu">
+            <li><a href="#" class="menu-link active" data-target="dashboard-content"><i class="fas fa-home"></i> Dashboard</a></li>
+            <li><a href="#" class="menu-link" data-target="explore-courses"><i class="fas fa-compass"></i> Teroka Kursus</a></li>
+            <li><a href="#" class="menu-link" data-target="competitions"><i class="fas fa-trophy"></i> Pertandingan</a></li>
+            <li><a href="#" class="menu-link" data-target="achievements"><i class="fas fa-medal"></i> Pencapaian</a></li>
+            <li><a href="#" class="menu-link" data-target="pajsk-progress"><i class="fas fa-chart-line"></i> Kemajuan PAJSK</a></li>
+            <li><a href="#" class="menu-link" data-target="settings"><i class="fas fa-cog"></i> Tetapan</a></li>
+        </div>
+    </div>
+
     <!-- Dashboard -->
     <div class="container">
         <div class="dashboard">
-            <!-- Sidebar -->
+            <!-- Desktop Sidebar -->
             <div class="sidebar">
                 <div class="sidebar-menu">
                     <li><a href="#" class="menu-link active" data-target="dashboard-content"><i class="fas fa-home"></i> Dashboard</a></li>
@@ -1601,62 +1739,74 @@
     <script>
         // Navigation functionality
         document.addEventListener('DOMContentLoaded', function() {
+            // Mobile menu functionality
+            const mobileMenuToggle = document.getElementById('mobile-menu-toggle');
+            const mobileSidebar = document.getElementById('mobile-sidebar');
+            const mobileNavOverlay = document.getElementById('mobile-nav-overlay');
+            const closeMobileMenu = document.getElementById('close-mobile-menu');
+            
+            function openMobileMenu() {
+                mobileSidebar.classList.add('active');
+                mobileNavOverlay.classList.add('active');
+                document.body.style.overflow = 'hidden';
+            }
+            
+            function closeMobileMenuFunc() {
+                mobileSidebar.classList.remove('active');
+                mobileNavOverlay.classList.remove('active');
+                document.body.style.overflow = '';
+            }
+            
+            mobileMenuToggle.addEventListener('click', openMobileMenu);
+            closeMobileMenu.addEventListener('click', closeMobileMenuFunc);
+            mobileNavOverlay.addEventListener('click', closeMobileMenuFunc);
+            
             // Menu navigation
             const menuLinks = document.querySelectorAll('.menu-link');
             const contentSections = document.querySelectorAll('.content-section');
             
+            function navigateToSection(targetId) {
+                // Remove active class from all links and sections
+                menuLinks.forEach(l => l.classList.remove('active'));
+                contentSections.forEach(section => section.classList.remove('active'));
+                
+                // Add active class to clicked link
+                document.querySelector(`.menu-link[data-target="${targetId}"]`).classList.add('active');
+                
+                // Show the corresponding content section
+                document.getElementById(targetId).classList.add('active');
+                
+                // Close mobile menu after navigation
+                closeMobileMenuFunc();
+            }
+            
             menuLinks.forEach(link => {
                 link.addEventListener('click', function(e) {
                     e.preventDefault();
-                    
-                    // Remove active class from all links and sections
-                    menuLinks.forEach(l => l.classList.remove('active'));
-                    contentSections.forEach(section => section.classList.remove('active'));
-                    
-                    // Add active class to clicked link
-                    this.classList.add('active');
-                    
-                    // Show the corresponding content section
                     const targetId = this.getAttribute('data-target');
-                    document.getElementById(targetId).classList.add('active');
+                    navigateToSection(targetId);
                 });
             });
             
             // Home logo link
             document.getElementById('home-link').addEventListener('click', function() {
-                menuLinks.forEach(l => l.classList.remove('active'));
-                contentSections.forEach(section => section.classList.remove('active'));
-                
-                document.querySelector('.menu-link[data-target="dashboard-content"]').classList.add('active');
-                document.getElementById('dashboard-content').classList.add('active');
+                navigateToSection('dashboard-content');
             });
             
             // View all links
             document.getElementById('view-all-courses').addEventListener('click', function(e) {
                 e.preventDefault();
-                menuLinks.forEach(l => l.classList.remove('active'));
-                contentSections.forEach(section => section.classList.remove('active'));
-                
-                document.querySelector('.menu-link[data-target="explore-courses"]').classList.add('active');
-                document.getElementById('explore-courses').classList.add('active');
+                navigateToSection('explore-courses');
             });
             
             document.getElementById('view-all-categories').addEventListener('click', function(e) {
                 e.preventDefault();
-                menuLinks.forEach(l => l.classList.remove('active'));
-                contentSections.forEach(section => section.classList.remove('active'));
-                
-                document.querySelector('.menu-link[data-target="explore-courses"]').classList.add('active');
-                document.getElementById('explore-courses').classList.add('active');
+                navigateToSection('explore-courses');
             });
             
             document.getElementById('view-all-competitions').addEventListener('click', function(e) {
                 e.preventDefault();
-                menuLinks.forEach(l => l.classList.remove('active'));
-                contentSections.forEach(section => section.classList.remove('active'));
-                
-                document.querySelector('.menu-link[data-target="competitions"]').classList.add('active');
-                document.getElementById('competitions').classList.add('active');
+                navigateToSection('competitions');
             });
             
             // Course card interaction
@@ -1675,13 +1825,7 @@
             categoryCards.forEach(card => {
                 card.addEventListener('click', function() {
                     const categoryName = this.querySelector('.category-name').textContent;
-                    // Navigate to explore courses and filter by category
-                    menuLinks.forEach(l => l.classList.remove('active'));
-                    contentSections.forEach(section => section.classList.remove('active'));
-                    
-                    document.querySelector('.menu-link[data-target="explore-courses"]').classList.add('active');
-                    document.getElementById('explore-courses').classList.add('active');
-                    
+                    navigateToSection('explore-courses');
                     alert(`Memaparkan kursus dalam kategori: ${categoryName}`);
                 });
             });
