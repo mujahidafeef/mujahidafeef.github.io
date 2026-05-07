@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Afeef Brothers Innovations | Three Amazing Apps</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+
+        /* Header */
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 20px 0;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            box-shadow: 0 2px 20px rgba(0,0,0,0.1);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        .nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .brand-icon {
+            font-size: 32px;
+        }
+
+        .brand h1 {
+            font-size: 24px;
+            color: #333;
+        }
+
+        .brand p {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 30px;
+            flex-wrap: wrap;
+        }
+
+        .nav-links a {
+            text-decoration: none;
+            color: #333;
+            font-weight: 500;
+            transition: color 0.3s;
+        }
+
+        .nav-links a:hover {
+            color: #4CAF50;
+        }
+
+        /* Hero Section */
+        .hero {
+            padding: 60px 0 40px;
+            text-align: center;
+            color: white;
+        }
+
+        .hero h1 {
+            font-size: 48px;
+            margin-bottom: 20px;
+            animation: fadeInUp 0.8s ease;
+        }
+
+        .hero p {
+            font-size: 20px;
+            margin-bottom: 30px;
+            animation: fadeInUp 0.8s ease 0.2s both;
+        }
+
+        /* Projects Grid */
+        .projects-section {
+            padding: 60px 0;
+            background: #f9f9f9;
+        }
+
+        .section-title {
+            text-align: center;
+            font-size: 36px;
+            margin-bottom: 15px;
+            color: #333;
+        }
+
+        .section-subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 50px;
+            font-size: 18px;
+        }
+
+        .projects-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 40px;
+            margin-top: 20px;
+        }
+
+        .project-card {
+            background: white;
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            transition: transform 0.3s, box-shadow 0.3s;
+            cursor: pointer;
+        }
+
+        .project-card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+        }
+
+        .card-header {
+            padding: 40px 30px 20px;
+            text-align: center;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        }
+
+        .card-header img {
+            max-width: 120px;
+            height: auto;
+            margin-bottom: 20px;
+        }
+
+        .card-header .icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+        }
+
+        .card-header h2 {
+            font-size: 28px;
+            color: #333;
+        }
+
+        .card-body {
+            padding: 30px;
+        }
+
+        .card-body p {
+            color: #666;
+            line-height: 1.6;
+            margin-bottom: 20px;
+        }
+
+        .features-list {
+            list-style: none;
+            margin: 20px 0;
+        }
+
+        .features-list li {
+            padding: 8px 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .features-list li i {
+            color: #4CAF50;
+            width: 20px;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 12px 30px;
+            background: #4CAF50;
+            color: white;
+            text-decoration: none;
+            border-radius: 50px;
+            font-weight: bold;
+            transition: all 0.3s;
+            border: none;
+            cursor: pointer;
+            text-align: center;
+            width: 100%;
+        }
+
+        .btn:hover {
+            background: #45a049;
+            transform: scale(1.05);
+        }
+
+        /* Card Specific Colors */
+        .card-foodprint .card-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .card-foodprint .card-header h2,
+        .card-foodprint .features-list li i {
+            color: #764ba2;
+        }
+        .card-foodprint .btn {
+            background: #764ba2;
+        }
+        .card-foodprint .btn:hover {
+            background: #5a3a7a;
+        }
+
+        .card-eduminat .card-header {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+        }
+        .card-eduminat .card-header h2,
+        .card-eduminat .features-list li i {
+            color: #f5576c;
+        }
+        .card-eduminat .btn {
+            background: #f5576c;
+        }
+        .card-eduminat .btn:hover {
+            background: #d43f54;
+        }
+
+        .card-pet .card-header {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+        }
+        .card-pet .card-header h2,
+        .card-pet .features-list li i {
+            color: #4facfe;
+        }
+        .card-pet .btn {
+            background: #4facfe;
+        }
+        .card-pet .btn:hover {
+            background: #3a8bd4;
+        }
+
+        /* Team Section */
+        .team-section {
+            padding: 60px 0;
+            background: white;
+        }
+
+        .team-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 40px;
+            margin-top: 40px;
+        }
+
+        .team-member {
+            text-align: center;
+            padding: 30px;
+            background: #f9f9f9;
+            border-radius: 20px;
+            transition: transform 0.3s;
+        }
+
+        .team-member:hover {
+            transform: translateY(-5px);
+        }
+
+        .team-avatar {
+            width: 120px;
+            height: 120px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 20px;
+            font-size: 50px;
+        }
+
+        /* Footer */
+        .footer {
+            background: #1a1a2e;
+            color: white;
+            text-align: center;
+            padding: 40px 0;
+        }
+
+        .social-links {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .social-links a {
+            color: white;
+            font-size: 24px;
+            transition: color 0.3s;
+        }
+
+        .social-links a:hover {
+            color: #4CAF50;
+        }
+
+        /* Animations */
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 32px;
+            }
+            
+            .projects-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .nav {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <div class="nav">
+                <div class="brand">
+                    <div class="brand-icon">👨‍👦‍👦</div>
+                    <div>
+                        <h1>Afeef Brothers Innovations</h1>
+                        <p>SKPP 11(2) Young Innovators</p>
+                    </div>
+                </div>
+                <div class="nav-links">
+                    <a href="#home">Home</a>
+                    <a href="#projects">Projects</a>
+                    <a href="#team">Team</a>
+                    <a href="#contact">Contact</a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Hero Section -->
+    <section id="home" class="hero">
+        <div class="container">
+            <h1>Three Brothers. Three Innovations. 🌟</h1>
+            <p>One Mission: Using Technology to Make the World Better</p>
+        </div>
+    </section>
+
+    <!-- Projects Section -->
+    <section id="projects" class="projects-section">
+        <div class="container">
+            <h2 class="section-title">🚀 Our Innovations</h2>
+            <p class="section-subtitle">Three amazing apps to change the world</p>
+            
+            <div class="projects-grid">
+                
+                <!-- Project 1: Foodprint Calculator -->
+                <div class="project-card card-foodprint" onclick="window.location.href='foodprint.html'">
+                    <div class="card-header">
+                        <img src="foodprint/img/foodprint.png" alt="Foodprint Logo">
+                        <h2>Foodprint Calculator</h2>
+                    </div>
+                    <div class="card-body">
+                        <p>Calculate your food's carbon footprint and make Earth-friendly choices with AI-powered food recognition!</p>
+                        <ul class="features-list">
+                            <li><i class="fas fa-camera"></i> AI Camera Food Detection</li>
+                            <li><i class="fas fa-chart-line"></i> Carbon & Water Footprint</li>
+                            <li><i class="fas fa-exchange-alt"></i> Smart Swap Suggestions</li>
+                            <li><i class="fas fa-star"></i> Earth Points Gamification</li>
+                        </ul>
+                        <a href="foodprint.html" class="btn">Launch Foodprint →</a>
+                    </div>
+                </div>
+
+                <!-- Project 2: EduMinat -->
+                <div class="project-card card-eduminat" onclick="window.location.href='eduminat.html'">
+                    <div class="card-header">
+                        <div class="logo" id="home-link">
+                            <i class="fas fa-rocket" style="font-size: 60px;"></i>
+                        </div>
+                        <h2>EduMinat</h2>
+                    </div>
+                    <div class="card-body">
+                        <p>Interactive learning platform that makes education fun and engaging for young minds!</p>
+                        <ul class="features-list">
+                            <li><i class="fas fa-gamepad"></i> Gamified Learning</li>
+                            <li><i class="fas fa-brain"></i> Personalized Quizzes</li>
+                            <li><i class="fas fa-trophy"></i> Achievement Badges</li>
+                            <li><i class="fas fa-chart-simple"></i> Progress Tracking</li>
+                        </ul>
+                        <a href="eduminat.html" class="btn">Launch EduMinat →</a>
+                    </div>
+                </div>
+
+                <!-- Project 3: AI Pet Nanny -->
+                <div class="project-card card-pet" onclick="window.location.href='pet-nanny.html'">
+                    <div class="card-header">
+                        <img title="logo" alt="Logo" src="assets/icons/logo.svg" class="robot-icon" style="width: 80px; height: auto;">
+                        <h2>AI Pet Nanny</h2>
+                    </div>
+                    <div class="card-body">
+                        <p>Smart pet care assistant that helps you take care of your furry friends with AI technology!</p>
+                        <ul class="features-list">
+                            <li><i class="fas fa-robot"></i> AI Pet Health Monitor</li>
+                            <li><i class="fas fa-bell"></i> Feeding Reminders</li>
+                            <li><i class="fas fa-heartbeat"></i> Health Tracking</li>
+                            <li><i class="fas fa-chart-line"></i> Activity Reports</li>
+                        </ul>
+                        <a href="pet-nanny.html" class="btn">Launch AI Pet Nanny →</a>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+    <!-- Team Section -->
+    <section id="team" class="team-section">
+        <div class="container">
+            <h2 class="section-title">👨‍👦‍👦 Meet the Afeef Brothers</h2>
+            <p class="section-subtitle">The young minds behind these innovations</p>
+            
+            <div class="team-grid">
+                <div class="team-member">
+                    <div class="team-avatar" style="background: linear-gradient(135deg, #FF6B6B, #FF8E53);">
+                        👑
+                    </div>
+                    <h3>Mujahid Afeef</h3>
+                    <p style="color: #FF6B6B; font-weight: bold;">The Leader</p>
+                    <p>"Strive for a better world"</p>
+                    <div style="margin-top: 15px;">
+                        <small>🎯 Visionary & Project Manager</small>
+                    </div>
+                </div>
+                
+                <div class="team-member">
+                    <div class="team-avatar" style="background: linear-gradient(135deg, #4CAF50, #8BC34A);">
+                        🧠
+                    </div>
+                    <h3>Mursyid Afeef</h3>
+                    <p style="color: #4CAF50; font-weight: bold;">The Smart One</p>
+                    <p>"Code for Solution"</p>
+                    <div style="margin-top: 15px;">
+                        <small>💻 Lead Developer & AI Specialist</small>
+                    </div>
+                </div>
+                
+                <div class="team-member">
+                    <div class="team-avatar" style="background: linear-gradient(135deg, #2196F3, #00BCD4);">
+                        🎨
+                    </div>
+                    <h3>Musyrif Afeef</h3>
+                    <p style="color: #2196F3; font-weight: bold;">The Creative One</p>
+                    <p>"Design for Impact"</p>
+                    <div style="margin-top: 15px;">
+                        <small>🎨 UI/UX Designer & Content Creator</small>
+                    </div>
+                </div>
+            </div>
+            
+            <div style="text-align: center; margin-top: 50px; padding: 20px; background: #f9f9f9; border-radius: 20px;">
+                <p style="font-size: 18px;">🏫 SKPP 11(2) - Primary School Innovation Team</p>
+                <p>🌍 "Three brothers, one mission: Save our planet through technology"</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer id="contact" class="footer">
+        <div class="container">
+            <div class="social-links">
+                <a href="#"><i class="fab fa-github"></i></a>
+                <a href="#"><i class="fab fa-twitter"></i></a>
+                <a href="#"><i class="fab fa-instagram"></i></a>
+                <a href="#"><i class="fab fa-linkedin"></i></a>
+            </div>
+            <p>🚀 Afeef Brothers Innovations | SKPP 11(2)</p>
+            <p style="margin-top: 10px; font-size: 14px;">© 2026 | Innovating for a better tomorrow</p>
+            <p style="margin-top: 5px; font-size: 12px;">📧 contact@afeefbrothers.com | 📱 +60 XXX XXX XXX</p>
+        </div>
+    </footer>
+
+    <script>
+        // Smooth scroll for navigation links
+        document.querySelectorAll('.nav-links a, .hero .btn').forEach(anchor => {
+            anchor.addEventListener('click', function(e) {
+                if (this.getAttribute('href') && this.getAttribute('href').startsWith('#')) {
+                    e.preventDefault();
+                    const target = document.querySelector(this.getAttribute('href'));
+                    if (target) {
+                        target.scrollIntoView({ behavior: 'smooth' });
+                    }
+                }
+            });
+        });
+
+        // Add click animation to cards
+        const cards = document.querySelectorAll('.project-card');
+        cards.forEach(card => {
+            card.addEventListener('click', function(e) {
+                if (e.target.tagName !== 'A' && !e.target.classList.contains('btn')) {
+                    const link = this.querySelector('.btn');
+                    if (link) {
+                        window.location.href = link.getAttribute('href');
+                    }
+                }
+            });
+        });
+    </script>
+</body>
+</html>
