@@ -1,0 +1,1003 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>EduMinat · Organizer</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="app">
+        <aside class="sidebar">
+            <div class="logo"><i class="fas fa-rocket"></i> <span>EduMinat</span></div>
+            <div class="user-card">
+                <div class="avatar" id="avatar">O</div>
+                <div class="info">
+                    <strong id="userName">Loading...</strong>
+                    <span data-i18n="role.organizer"></span>
+                </div>
+            </div>
+            <nav class="nav">
+                <div class="nav-item active" data-tab="dashboard"><i class="fas fa-calendar-alt"></i> <span data-i18n="nav.my_events"></span></div>
+                <div class="nav-item" data-tab="new"><i class="fas fa-plus-circle"></i> <span data-i18n="nav.submit_comp"></span></div>
+                <div class="nav-item" onclick="DB.resetDemo()"><i class="fas fa-rotate-left"></i> <span data-i18n="nav.reset"></span></div>
+                <div class="nav-item logout" onclick="DB.logout()"><i class="fas fa-sign-out-alt"></i> <span data-i18n="nav.logout"></span></div>
+            </nav>
+        </aside>
+        <main class="main" id="main"></main>
+    </div>
+
+    <div class="toast" id="toast"><i class="fas fa-check-circle"></i><span id="toastMsg"></span></div>
+
+    <div class="modal-backdrop" id="importModal">
+        <div class="modal">
+            <div class="modal-header">
+                <div>
+                    <h3 data-i18n="common.preview_import"></h3>
+                    <p class="sub" id="modalSubtitle" data-i18n="common.review_before"></p>
+                </div>
+                <button class="modal-close" onclick="closeImportModal()">✕</button>
+            </div>
+            <div class="modal-body" id="modalBody"></div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeImportModal()">
+                    <i class="fas fa-times"></i> <span data-i18n="common.cancel"></span>
+                </button>
+                <button class="btn btn-primary" id="confirmImportBtn" disabled>
+                    <i class="fas fa-check"></i> <span data-i18n="common.confirm_import"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="tourBanner" class="tour-banner hidden">
+        <div class="tour-content">
+            <div class="tour-icon"><i class="fas fa-graduation-cap"></i></div>
+            <div class="tour-text">
+                <strong id="tourTitle"></strong>
+                <p id="tourBody"></p>
+                <ol id="tourSteps"></ol>
+            </div>
+            <button class="tour-dismiss" onclick="dismissTour()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="dismissTour()" id="tourDismissBtn"></button>
+    </div>
+
+    <script src="scripts/xlsx.full.min.js"></script>
+    <script src="scripts/i18n.js"></script>
+    <script src="scripts/db.js"></script>
+    <script src="scripts/tour.js"></script>
+    <script>
+        let user = null;
+        let currentTab = 'dashboard';
+        let activeCompId = null;
+
+        document.addEventListener('languagechange', () => {
+            I18N.injectLanguageSwitcher();
+            I18N.applyI18n();
+            render();
+        });
+
+        async function init() {
+            await DB.openDB();
+            await DB.seedDemoData();
+
+            I18N.injectLanguageSwitcher();
+            I18N.applyI18n();
+
+            const session = await DB.currentUser();
+            user = session ? await DB.Users.get(session.email) : null;
+            if (!user || user.role !== 'organizer') {
+                window.location.href = 'login.html';
+                return;
+            }
+
+            document.getElementById('userName').innerText = user.name;
+            document.getElementById('avatar').innerText = user.name.charAt(0).toUpperCase();
+
+            document.querySelectorAll('.nav-item[data-tab]').forEach(el => {
+                el.addEventListener('click', () => {
+                    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+                    el.classList.add('active');
+                    currentTab = el.dataset.tab;
+                    activeCompId = null;
+                    render();
+                });
+            });
+
+            document.getElementById('confirmImportBtn').addEventListener('click', commitImport);
+            document.getElementById('importModal').addEventListener('click', (e) => {
+                if (e.target.id === 'importModal') closeImportModal();
+            });
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && document.getElementById('importModal').classList.contains('show')) {
+                    closeImportModal();
+                }
+            });
+
+            render();
+        }
+
+        async function render() {
+            const main = document.getElementById('main');
+            main.innerHTML = `<div class="empty"><i class="fas fa-spinner fa-spin"></i>${I18N.t('common.loading')}</div>`;
+
+            try {
+                if (currentTab === 'dashboard') main.innerHTML = await renderEvents();
+                else if (currentTab === 'new') main.innerHTML = await renderNewForm();
+                else if (currentTab === 'manage') main.innerHTML = await renderManage();
+                attachHandlers();
+            } catch (err) {
+                console.error(err);
+                main.innerHTML = `<div class="card"><div class="empty">
+                    <i class="fas fa-exclamation-triangle"></i>${I18N.t('common.error')}: ${err.message}
+                    </div></div>`;
+            }
+        
+            // After the main content is inserted into #main:
+            if (typeof renderTour === 'function') renderTour();
+        }
+
+        async function renderEvents() {
+            const comps = await DB.Competitions.byOrganizer(user.email);
+
+            const approved = comps.filter(c => c.status === 'approved');
+            const pending = comps.filter(c => c.status === 'pending');
+            const completed = comps.filter(c => c.status === 'completed');
+
+            return `
+        <div class="header"><h1>${I18N.t('org.my_events')}</h1></div>
+
+        <div class="grid-3">
+          <div class="stat"><div class="label">${I18N.t('org.approved')}</div><div class="value">${approved.length}</div><div class="sub">${I18N.t('org.approved_sub')}</div></div>
+          <div class="stat"><div class="label">${I18N.t('org.pending')}</div><div class="value">${pending.length}</div><div class="sub">${I18N.t('org.pending_sub')}</div></div>
+          <div class="stat"><div class="label">${I18N.t('org.completed')}</div><div class="value">${completed.length}</div><div class="sub">${I18N.t('org.completed_sub')}</div></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>${I18N.t('org.manage_title')}</h3>
+            <button class="btn btn-primary btn-sm" onclick="goToNew()">
+              <i class="fas fa-plus"></i> ${I18N.t('org.create_event')}
+            </button>
+          </div>
+
+          ${comps.length === 0
+            ? emptyState(I18N.t('org.no_events'))
+            : `<table>
+                <tr>
+                  <th>${I18N.t('th.name')}</th>
+                  <th>${I18N.t('th.level')}</th>
+                  <th>${I18N.t('th.date')}</th>
+                  <th>${I18N.t('th.status')}</th>
+                  <th></th>
+                </tr>
+                ${comps.map(c => `
+                  <tr>
+                    <td><strong>${c.name}</strong><br>
+                      <span class="text-muted" style="font-size:0.8rem;">${c.category}</span>
+                    </td>
+                    <td>${DB.levelLabel(c.level)}</td>
+                    <td>${c.date}</td>
+                    <td>${statusBadge(c.status)}</td>
+                    <td>
+                      <button class="btn btn-outline btn-sm" data-manage="${c.id}">
+                        <i class="fas fa-cog"></i> ${I18N.t('common.manage')}
+                      </button>
+                    </td>
+                  </tr>
+                `).join('')}
+              </table>`}
+        </div>
+      `;
+        }
+
+        async function renderNewForm() {
+            return `
+        <div class="header"><h1>${I18N.t('org.new_comp_title')}</h1></div>
+
+        <div class="card">
+          <form id="newCompForm">
+            <div class="form-group">
+              <label>${I18N.t('org.comp_name')}</label>
+              <input type="text" id="compName" required>
+            </div>
+
+            <div class="grid-2">
+              <div class="form-group">
+                <label>${I18N.t('org.comp_category')}</label>
+                <select id="compCategory">
+                  <option>STEM</option>
+                  <option>Language</option>
+                  <option>Arts</option>
+                  <option>Sports</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>${I18N.t('org.comp_date')}</label>
+                <input type="date" id="compDate" required>
+              </div>
+            </div>
+
+            <div class="grid-2">
+              <div class="form-group">
+                <label>${I18N.t('org.comp_level')}</label>
+                <select id="compLevel">
+                  <option value="antarabangsa" data-i18n="level.antarabangsa"></option>
+                  <option value="kebangsaan" selected data-i18n="level.kebangsaan"></option>
+                  <option value="negeri" data-i18n="level.negeri"></option>
+                  <option value="bahagian" data-i18n="level.bahagian"></option>
+                  <option value="zon_daerah" data-i18n="level.zon_daerah"></option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>${I18N.t('org.comp_engagement')}</label>
+                <select id="compEngagement">
+                  <option value="1" data-i18n="eng.1"></option>
+                  <option value="2" data-i18n="eng.2"></option>
+                  <option value="3" data-i18n="eng.3"></option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>${I18N.t('org.comp_desc')}</label>
+              <textarea id="compDesc"></textarea>
+            </div>
+
+            <div class="card" style="background:var(--primary-light); border:none; margin:0 0 1rem; padding:1rem 1.2rem;">
+              <div class="flex-between">
+                <span style="font-weight:600; color:var(--primary);">${I18N.t('org.max_pajsk')}:</span>
+                <strong id="previewMarks" style="font-size:1.4rem; color:var(--primary);">29</strong>
+              </div>
+              <p class="text-muted" style="margin-top:0.3rem; font-size:0.82rem;">${I18N.t('org.max_pajsk_sub')}</p>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-block">
+              <i class="fas fa-paper-plane"></i> ${I18N.t('common.submit_for_approval')}
+            </button>
+          </form>
+        </div>
+      `;
+        }
+
+        async function renderManage() {
+            const comp = await DB.Competitions.get(activeCompId);
+            if (!comp) {
+                return `<div class="header"><h1>${I18N.t('common.not_found')}</h1></div>
+                <div class="card">${emptyState(I18N.t('common.competition_missing'))}</div>`;
+            }
+
+            const regs = await DB.Registrations.byCompetition(comp.id);
+            const students = await DB.Users.all();
+            const studentMap = Object.fromEntries(students.map(s => [s.email, s]));
+
+            const results = ['johan', 'naib_johan', 'ketiga', 'keempat', 'kelima', 'penyertaan'];
+            const allCompleted = regs.length > 0 && regs.every(r => r.status === 'completed');
+
+            return `
+        <div class="header">
+          <h1>${I18N.t('org.manage_prefix')} <span>${comp.name}</span></h1>
+          <button class="btn btn-outline btn-sm" onclick="backToEvents()">
+            <i class="fas fa-arrow-left"></i> ${I18N.t('common.back')}
+          </button>
+        </div>
+
+        <div class="card">
+          <h3>${I18N.t('org.comp_details')}</h3>
+          <div class="grid-2">
+            <div><span class="text-muted">${I18N.t('org.level')}:</span> <strong>${DB.levelLabel(comp.level)}</strong></div>
+            <div><span class="text-muted">${I18N.t('org.engagement')}:</span> <strong>${DB.engagementShort(comp.engagementType)}</strong></div>
+            <div><span class="text-muted">${I18N.t('org.comp_date')}:</span> <strong>${comp.date}</strong></div>
+            <div><span class="text-muted">${I18N.t('th.status')}:</span> ${statusBadge(comp.status)}</div>
+            <div><span class="text-muted">${I18N.t('org.participation_score')}:</span> <strong>${comp.participationScore}</strong></div>
+            <div><span class="text-muted">${I18N.t('org.max_achievement')}:</span> <strong>${comp.maxAchievementScore || 0}</strong></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>${I18N.t('org.participants_n')} (${regs.length})</h3>
+            <div class="flex">
+              <button class="btn btn-outline btn-sm" data-export="${comp.id}" ${regs.length === 0 ? 'disabled' : ''}>
+                <i class="fas fa-file-excel"></i> ${I18N.t('common.download_xlsx')}
+              </button>
+              <button class="btn btn-primary btn-sm" data-import="${comp.id}" ${regs.length === 0 ? 'disabled' : ''}>
+                <i class="fas fa-file-upload"></i> ${I18N.t('common.upload_results')}
+              </button>
+            </div>
+          </div>
+
+          <input type="file" id="excelUpload" accept=".xlsx,.xls" style="display:none;">
+
+          ${regs.length === 0
+            ? emptyState(I18N.t('org.no_participants'))
+            : `
+              <div class="card" style="background:#fafaff; border:1px dashed #d0d0e0; padding:1rem 1.2rem; margin-bottom:1.2rem;">
+                <p style="font-size:0.88rem; color:var(--text-muted); margin:0;">
+                  <strong><i class="fas fa-info-circle"></i> ${I18N.t('org.excel_help')}:</strong><br>
+                  ${I18N.t('org.excel_help_1')}<br>
+                  ${I18N.t('org.excel_help_2')}<br>
+                  ${I18N.t('org.excel_help_3')}
+                </p>
+              </div>
+
+              <table>
+                <tr>
+                  <th>${I18N.t('th.student')}</th>
+                  <th>${I18N.t('th.result')}</th>
+                  <th>${I18N.t('th.marks')}</th>
+                  <th></th>
+                </tr>
+                ${regs.map(r => {
+                  const s = studentMap[r.studentEmail];
+                  const p = r.participationScore ?? DB.getParticipationScore(comp.level, comp.engagementType);
+                  const a = r.achievementScore ?? 0;
+                  const total = r.totalPajsk ?? 0;
+                  return `
+                    <tr>
+                      <td>
+                        <strong>${s?.name || r.studentEmail}</strong>
+                        ${s?.class ? `<br><span class="text-muted" style="font-size:0.8rem;">${s.class}</span>` : ''}
+                      </td>
+                      <td>
+                        <select data-result-select="${r.id}" style="padding:0.5rem 2rem 0.5rem 0.8rem;">
+                          <option value="">${I18N.t('org.set_result')}</option>
+                          ${results.map(x => `
+                            <option value="${x}" ${r.result === x ? 'selected' : ''}>
+                              ${DB.resultLabel(x)}
+                            </option>
+                          `).join('')}
+                        </select>
+                      </td>
+                      <td>
+                        <strong>${total || '—'}</strong>
+                        ${r.result ? `<br><span class="text-muted" style="font-size:0.78rem;">P:${p} + A:${a}</span>` : ''}
+                      </td>
+                      <td>
+                        <button class="btn btn-primary btn-sm" data-save-result="${r.id}">
+                          <i class="fas fa-save"></i> ${I18N.t('common.save')}
+                        </button>
+                      </td>
+                    </tr>
+                  `;
+                }).join('')}
+              </table>
+            `}
+        </div>
+
+        ${allCompleted && comp.status !== 'completed' ? `
+          <div class="card">
+            <h3>${I18N.t('org.submit_report')}</h3>
+            <p class="text-muted" style="margin-bottom:1rem;">${I18N.t('org.submit_report_desc')}</p>
+            <button class="btn btn-success" data-submit-report="${comp.id}">
+              <i class="fas fa-paper-plane"></i> ${I18N.t('org.submit_report')}
+            </button>
+          </div>
+        ` : ''}
+
+        ${comp.status === 'completed' ? `
+          <div class="card" style="background:var(--primary-light); border:none;">
+            <div class="flex-between">
+              <div>
+                <h3 style="margin-bottom:0.3rem;">✅ ${I18N.t('org.report_sent')}</h3>
+                <p class="text-muted">${I18N.t('org.report_sent_desc')}</p>
+              </div>
+              <i class="fas fa-check-circle" style="font-size:2.5rem; color:var(--primary);"></i>
+            </div>
+          </div>
+        ` : ''}
+      `;
+        }
+
+        function statusBadge(status) {
+            const map = {
+                approved: {
+                    cls: 'badge-success',
+                    key: 'status.approved'
+                },
+                pending: {
+                    cls: 'badge-warning',
+                    key: 'status.pending'
+                },
+                rejected: {
+                    cls: 'badge-danger',
+                    key: 'status.rejected'
+                },
+                completed: {
+                    cls: 'badge-info',
+                    key: 'status.completed'
+                }
+            };
+            const b = map[status] || {
+                cls: 'badge-secondary',
+                key: null
+            };
+            return `<span class="badge ${b.cls}">${b.key ? I18N.t(b.key) : status}</span>`;
+        }
+
+        function emptyState(msg) {
+            return `<div class="empty"><i class="fas fa-inbox"></i>${msg}</div>`;
+        }
+
+        function showToast(msg, icon = 'check-circle') {
+            const tEl = document.getElementById('toast');
+            document.getElementById('toastMsg').innerText = msg;
+            tEl.querySelector('i').className = `fas fa-${icon}`;
+            tEl.classList.add('show');
+            setTimeout(() => tEl.classList.remove('show'), 2400);
+        }
+
+        function goToNew() {
+            currentTab = 'new';
+            activeCompId = null;
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            document.querySelector('[data-tab="new"]')?.classList.add('active');
+            render();
+        }
+
+        function backToEvents() {
+            currentTab = 'dashboard';
+            activeCompId = null;
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            document.querySelector('[data-tab="dashboard"]')?.classList.add('active');
+            render();
+        }
+
+        // ============ EXCEL EXPORT ============
+        async function exportParticipantsToExcel(compId) {
+            try {
+                const comp = await DB.Competitions.get(compId);
+                const regs = await DB.Registrations.byCompetition(compId);
+                const students = await DB.Users.all();
+                const studentMap = Object.fromEntries(students.map(s => [s.email, s]));
+
+                if (regs.length === 0) {
+                    showToast(I18N.t('org.no_export'), 'exclamation-circle');
+                    return;
+                }
+
+                const rows = regs.map(r => {
+                    const s = studentMap[r.studentEmail];
+                    return {
+                        'RegistrationID': r.id,
+                        'StudentEmail': r.studentEmail,
+                        'StudentName': s?.name || '',
+                        'Class': s?.class || '',
+                        'Result': r.result ? DB.resultLabel(r.result) : '',
+                        'CurrentPAJSK': r.totalPajsk || 0
+                    };
+                });
+
+                const ws = XLSX.utils.json_to_sheet(rows);
+                ws['!cols'] = [{
+                    wch: 14
+                }, {
+                    wch: 28
+                }, {
+                    wch: 24
+                }, {
+                    wch: 12
+                }, {
+                    wch: 18
+                }, {
+                    wch: 14
+                }];
+
+                const instructions = [
+                    ['PETUNJUK PENGISIAN KEPUTUSAN'],
+                    [''],
+                    ['Isi kolum "Result" dengan SALAH SATU nilai berikut:'],
+                    [''],
+                    ['Nilai yang sah:', 'Johan, Naib Johan, Ketiga, Keempat, Kelima, Penyertaan'],
+                    [''],
+                    ['Nota:'],
+                    ['- Kolum RegistrationID, StudentEmail, StudentName, Class TIDAK boleh diubah.'],
+                    ['- Kolum CurrentPAJSK hanya untuk rujukan.'],
+                    ['- Simpan fail sebagai .xlsx dan muat naik kembali.'],
+                    [''],
+                    ['Peringkat pertandingan:', DB.levelLabel(comp.level)],
+                    ['Penglibatan:', DB.engagementLabel(comp.engagementType)],
+                    ['Skor Penglibatan:', comp.participationScore],
+                    ['Maks. Pencapaian:', comp.maxAchievementScore || 0],
+                    [''],
+                    ['Contoh markah jika Johan:', comp.participationScore + (comp.maxAchievementScore || 0)]
+                ];
+                const wsInfo = XLSX.utils.aoa_to_sheet(instructions);
+                wsInfo['!cols'] = [{
+                    wch: 30
+                }, {
+                    wch: 50
+                }];
+
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, 'Participants');
+                XLSX.utils.book_append_sheet(wb, wsInfo, 'Instructions');
+
+                const safeName = comp.name.replace(/[^a-z0-9]/gi, '_');
+                XLSX.writeFile(wb, `${safeName}_participants.xlsx`);
+
+                showToast(I18N.t('org.export_success'), 'file-excel');
+            } catch (err) {
+                console.error(err);
+                showToast(I18N.t('org.export_failed'), 'exclamation-circle');
+            }
+        }
+
+        // ============ EXCEL IMPORT — PARSE ============
+        async function parseExcelImport(file, compId) {
+            const comp = await DB.Competitions.get(compId);
+            if (!comp) throw new Error('Competition not found');
+
+            // Accept both EN and MY labels
+            const labelToKey = {};
+            Object.keys(DB.KPM_SCORING.resultLabels).forEach(k => {
+                labelToKey[k.toLowerCase()] = k;
+                labelToKey[DB.KPM_SCORING.resultLabels[k].toLowerCase()] = k;
+            });
+            // EN labels
+            labelToKey['johan (1st)'] = 'johan';
+            labelToKey['naib johan (2nd)'] = 'naib_johan';
+            labelToKey['third place'] = 'ketiga';
+            labelToKey['fourth place'] = 'keempat';
+            labelToKey['fifth place'] = 'kelima';
+            labelToKey['participation'] = 'penyertaan';
+            // Aliases
+            Object.assign(labelToKey, {
+                'naib johan': 'naib_johan',
+                '2nd': 'naib_johan',
+                '3rd': 'ketiga',
+                '4th': 'keempat',
+                '5th': 'kelima',
+                'peserta': 'penyertaan'
+            });
+
+            const buffer = await file.arrayBuffer();
+            const wb = XLSX.read(buffer, {
+                type: 'array'
+            });
+            const sheetName = wb.SheetNames.includes('Participants') ? 'Participants' : wb.SheetNames[0];
+            const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {
+                defval: ''
+            });
+            if (rows.length === 0) throw new Error('File empty or invalid');
+
+            const regs = await DB.Registrations.byCompetition(compId);
+            const students = await DB.Users.all();
+            const studentMap = Object.fromEntries(students.map(s => [s.email, s]));
+            const regById = Object.fromEntries(regs.map(r => [r.id, r]));
+
+            const proposals = [];
+
+            for (let i = 0; i < rows.length; i++) {
+                const row = rows[i];
+                const rowNum = i + 2;
+                const regId = parseInt(row['RegistrationID'], 10);
+                const rawResult = String(row['Result'] || '').trim();
+
+                if (!regId) {
+                    proposals.push({
+                        rowNum,
+                        kind: 'error',
+                        message: 'RegistrationID missing',
+                        studentName: row['StudentName'] || '—'
+                    });
+                    continue;
+                }
+                const reg = regById[regId];
+                if (!reg) {
+                    proposals.push({
+                        rowNum,
+                        kind: 'error',
+                        message: `RegistrationID ${regId} not found`,
+                        studentName: row['StudentName'] || '—'
+                    });
+                    continue;
+                }
+                const student = studentMap[reg.studentEmail];
+
+                if (!rawResult) {
+                    proposals.push({
+                        rowNum,
+                        kind: 'unchanged',
+                        regId,
+                        studentName: student?.name || reg.studentEmail,
+                        oldResult: reg.result,
+                        newResult: reg.result,
+                        oldPajsk: reg.totalPajsk || 0,
+                        newPajsk: reg.totalPajsk || 0
+                    });
+                    continue;
+                }
+
+                const resultKey = labelToKey[rawResult.toLowerCase()];
+                if (!resultKey) {
+                    proposals.push({
+                        rowNum,
+                        kind: 'error',
+                        message: `Result "${rawResult}" invalid`,
+                        studentName: student?.name || reg.studentEmail
+                    });
+                    continue;
+                }
+
+                const scores = DB.computeRegistrationPajsk(comp, resultKey);
+                const oldResult = reg.result || null;
+                const oldPajsk = reg.totalPajsk || 0;
+
+                let kind;
+                if (!oldResult) kind = 'new';
+                else if (oldResult === resultKey && oldPajsk === scores.totalPajsk) kind = 'unchanged';
+                else kind = 'changed';
+
+                proposals.push({
+                    rowNum,
+                    kind,
+                    regId,
+                    studentName: student?.name || reg.studentEmail,
+                    studentClass: student?.class || '',
+                    oldResult,
+                    newResult: resultKey,
+                    oldPajsk,
+                    newPajsk: scores.totalPajsk,
+                    participationScore: scores.participationScore,
+                    achievementScore: scores.achievementScore
+                });
+            }
+
+            return {
+                comp,
+                proposals
+            };
+        }
+
+        // ============ EXCEL IMPORT — PREVIEW ============
+        async function importResultsFromExcel(file, compId) {
+            try {
+                showToast(I18N.t('org.import_reading'), 'spinner');
+
+                const {
+                    comp,
+                    proposals
+                } = await parseExcelImport(file, compId);
+
+                const counts = {
+                    new: proposals.filter(p => p.kind === 'new').length,
+                    changed: proposals.filter(p => p.kind === 'changed').length,
+                    unchanged: proposals.filter(p => p.kind === 'unchanged').length,
+                    error: proposals.filter(p => p.kind === 'error').length,
+                    total: proposals.length
+                };
+
+                window.__pendingImport = {
+                    compId,
+                    proposals
+                };
+
+                document.getElementById('modalSubtitle').innerText = `${comp.name} · ${counts.total}`;
+
+                document.getElementById('modalBody').innerHTML = `
+          <div class="summary-chips">
+            ${counts.new       ? `<div class="chip chip-success"><i class="fas fa-plus"></i> ${counts.new} new</div>` : ''}
+            ${counts.changed   ? `<div class="chip chip-warning"><i class="fas fa-pen"></i> ${counts.changed} changed</div>` : ''}
+            ${counts.unchanged ? `<div class="chip chip-muted"><i class="fas fa-minus"></i> ${counts.unchanged} unchanged</div>` : ''}
+            ${counts.error     ? `<div class="chip chip-danger"><i class="fas fa-exclamation-triangle"></i> ${counts.error} errors</div>` : ''}
+          </div>
+
+          <table class="modal-table">
+            <tr>
+              <th style="width:5%;">#</th>
+              <th style="width:28%;">${I18N.t('th.student')}</th>
+              <th style="width:25%;">${I18N.t('th.result')}</th>
+              <th style="width:20%;">${I18N.t('th.marks')}</th>
+              <th style="width:22%;">${I18N.t('th.status')}</th>
+            </tr>
+            ${proposals.map(p => renderProposalRow(p)).join('')}
+          </table>
+        `;
+
+                const confirmBtn = document.getElementById('confirmImportBtn');
+                const changeable = counts.new + counts.changed;
+                confirmBtn.disabled = changeable === 0;
+                confirmBtn.innerHTML = changeable > 0 ?
+                    `<i class="fas fa-check"></i> ${I18N.t('org.apply_changes', { n: changeable })}` :
+                    `<i class="fas fa-check"></i> ${I18N.t('org.nothing_apply')}`;
+
+                document.getElementById('importModal').classList.add('show');
+            } catch (err) {
+                console.error(err);
+                showToast(err.message || I18N.t('org.import_error'), 'exclamation-circle');
+            }
+        }
+
+        function renderProposalRow(p) {
+            const rowClass = {
+                new: 'row-new',
+                changed: 'row-changed',
+                unchanged: 'row-unchanged',
+                error: 'row-error'
+            } [p.kind];
+
+            if (p.kind === 'error') {
+                return `<tr class="${rowClass}">
+          <td>${p.rowNum}</td>
+          <td>${p.studentName || '—'}</td>
+          <td colspan="2">—</td>
+          <td><span class="error-msg-inline"><i class="fas fa-exclamation-circle"></i>${p.message}</span></td>
+        </tr>`;
+            }
+
+            const oldLbl = p.oldResult ? DB.resultLabel(p.oldResult) : '—';
+            const newLbl = DB.resultLabel(p.newResult);
+
+            const resultCell = p.oldResult === p.newResult ?
+                `<span>${newLbl}</span>` :
+                `<span class="diff-old">${oldLbl}</span><span class="diff-arrow">→</span><span class="diff-new">${newLbl}</span>`;
+
+            const pajskCell = p.oldPajsk === p.newPajsk ?
+                `<span>${p.newPajsk}</span>` :
+                `<span class="diff-old">${p.oldPajsk}</span><span class="diff-arrow">→</span><span class="diff-new">${p.newPajsk}</span>`;
+
+            const statusCell = {
+                new: `<span class="badge badge-success">NEW</span>`,
+                changed: `<span class="badge badge-warning">CHANGED</span>`,
+                unchanged: `<span class="badge badge-secondary">Unchanged</span>`
+            } [p.kind];
+
+            return `<tr class="${rowClass}">
+        <td>${p.rowNum}</td>
+        <td>
+          <strong>${p.studentName}</strong>
+          ${p.studentClass ? `<br><span class="text-muted" style="font-size:0.78rem;">${p.studentClass}</span>` : ''}
+        </td>
+        <td>${resultCell}</td>
+        <td>${pajskCell}</td>
+        <td>${statusCell}</td>
+      </tr>`;
+        }
+
+        async function commitImport() {
+            const pending = window.__pendingImport;
+            if (!pending) return;
+            const {
+                compId,
+                proposals
+            } = pending;
+            const comp = await DB.Competitions.get(compId);
+            const toApply = proposals.filter(p => p.kind === 'new' || p.kind === 'changed');
+            if (toApply.length === 0) {
+                closeImportModal();
+                return;
+            }
+
+            try {
+                for (const p of toApply) {
+                    const reg = await DB.Registrations.get(p.regId);
+                    if (!reg) continue;
+                    reg.result = p.newResult;
+                    reg.status = 'completed';
+                    reg.participationScore = p.participationScore;
+                    reg.achievementScore = p.achievementScore;
+                    reg.totalPajsk = p.newPajsk;
+                    reg.completedAt = Date.now();
+                    await DB.Registrations.put(reg);
+
+                    const marks = await DB.Marks.byStudent(reg.studentEmail);
+                    const existing = marks.find(m => m.competitionId === comp.id);
+                    const markRecord = {
+                        studentEmail: reg.studentEmail,
+                        competitionId: comp.id,
+                        competitionName: comp.name,
+                        level: comp.level,
+                        result: p.newResult,
+                        participationScore: p.participationScore,
+                        achievementScore: p.achievementScore,
+                        marks: p.newPajsk,
+                        type: 'Competition',
+                        source: comp.name,
+                        awardedAt: Date.now()
+                    };
+                    if (existing) {
+                        markRecord.id = existing.id;
+                        await DB.Marks.put(markRecord);
+                    } else await DB.Marks.add(markRecord);
+                }
+                closeImportModal();
+                showToast(I18N.t('org.import_success', {
+                    n: toApply.length
+                }), 'check-circle');
+                render();
+            } catch (err) {
+                console.error(err);
+                showToast(I18N.t('org.import_failed'), 'exclamation-circle');
+            }
+        }
+
+        function closeImportModal() {
+            document.getElementById('importModal').classList.remove('show');
+            window.__pendingImport = null;
+        }
+
+        function attachHandlers() {
+            const levelSel = document.getElementById('compLevel');
+            const engSel = document.getElementById('compEngagement');
+            if (levelSel && engSel) {
+                const update = () => {
+                    const lvl = levelSel.value;
+                    const eng = parseInt(engSel.value, 10);
+                    const part = DB.getParticipationScore(lvl, eng);
+                    const ach = DB.getAchievementScore(lvl, 'johan');
+                    document.getElementById('previewMarks').innerText = part + ach;
+                };
+                levelSel.addEventListener('change', update);
+                engSel.addEventListener('change', update);
+                update();
+            }
+
+            const form = document.getElementById('newCompForm');
+            if (form) {
+                form.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const name = document.getElementById('compName').value.trim();
+                    if (!name) {
+                        showToast(I18N.t('org.name_required'), 'exclamation-circle');
+                        return;
+                    }
+                    const date = document.getElementById('compDate').value;
+                    if (!date) {
+                        showToast(I18N.t('org.date_required'), 'exclamation-circle');
+                        return;
+                    }
+
+                    const level = document.getElementById('compLevel').value;
+                    const eng = parseInt(document.getElementById('compEngagement').value, 10);
+
+                    const comp = {
+                        name,
+                        organizerEmail: user.email,
+                        organizerName: user.name,
+                        category: document.getElementById('compCategory').value,
+                        description: document.getElementById('compDesc').value.trim(),
+                        date,
+                        status: 'pending',
+                        level,
+                        mode: 'fizikal',
+                        engagementType: eng,
+                        hasRanking: eng === 1,
+                        participationScore: DB.getParticipationScore(level, eng),
+                        maxAchievementScore: DB.getAchievementScore(level, 'johan')
+                    };
+
+                    await DB.Competitions.add(comp);
+                    showToast(I18N.t('common.submit_for_approval'), 'check-circle');
+                    backToEvents();
+                });
+            }
+
+            document.querySelectorAll('[data-manage]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    activeCompId = parseInt(btn.dataset.manage, 10);
+                    currentTab = 'manage';
+                    render();
+                });
+            });
+
+            document.querySelectorAll('[data-export]').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const compId = parseInt(btn.dataset.export, 10);
+                    await exportParticipantsToExcel(compId);
+                });
+            });
+
+            document.querySelectorAll('[data-import]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const compId = parseInt(btn.dataset.import, 10);
+                    const input = document.getElementById('excelUpload');
+                    input.value = '';
+                    input.onchange = (e) => {
+                        const file = e.target.files[0];
+                        if (file) importResultsFromExcel(file, compId);
+                    };
+                    input.click();
+                });
+            });
+
+            document.querySelectorAll('[data-save-result]').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const regId = parseInt(btn.dataset.saveResult, 10);
+                    const sel = document.querySelector(`[data-result-select="${regId}"]`);
+                    const result = sel.value;
+                    if (!result) {
+                        showToast(I18N.t('org.pick_result'), 'exclamation-circle');
+                        return;
+                    }
+
+                    try {
+                        const reg = await DB.Registrations.get(regId);
+                        const comp = await DB.Competitions.get(reg.competitionId);
+                        const scores = DB.computeRegistrationPajsk(comp, result);
+
+                        reg.result = result;
+                        reg.status = 'completed';
+                        reg.participationScore = scores.participationScore;
+                        reg.achievementScore = scores.achievementScore;
+                        reg.totalPajsk = scores.totalPajsk;
+                        reg.completedAt = Date.now();
+                        await DB.Registrations.put(reg);
+
+                        const marks = await DB.Marks.byStudent(reg.studentEmail);
+                        const existing = marks.find(m => m.competitionId === comp.id);
+                        const markRecord = {
+                            studentEmail: reg.studentEmail,
+                            competitionId: comp.id,
+                            competitionName: comp.name,
+                            level: comp.level,
+                            result,
+                            participationScore: scores.participationScore,
+                            achievementScore: scores.achievementScore,
+                            marks: scores.totalPajsk,
+                            type: 'Competition',
+                            source: comp.name,
+                            awardedAt: Date.now()
+                        };
+                        if (existing) {
+                            markRecord.id = existing.id;
+                            await DB.Marks.put(markRecord);
+                        } else await DB.Marks.add(markRecord);
+
+                        showToast(I18N.t('org.saved_result', {
+                            result: DB.resultLabel(result),
+                            marks: scores.totalPajsk
+                        }), 'check-circle');
+                        render();
+                    } catch (err) {
+                        console.error(err);
+                        showToast(I18N.t('org.save_failed'), 'exclamation-circle');
+                    }
+                });
+            });
+
+            document.querySelectorAll('[data-submit-report]').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const compId = parseInt(btn.dataset.submitReport, 10);
+                    try {
+                        const comp = await DB.Competitions.get(compId);
+                        const regs = await DB.Registrations.byCompetition(compId);
+                        const completed = regs.filter(r => r.status === 'completed');
+                        if (completed.length === 0) {
+                            showToast(I18N.t('org.no_participants'), 'exclamation-circle');
+                            return;
+                        }
+                        await DB.Reports.add({
+                            competitionId: comp.id,
+                            competitionName: comp.name,
+                            organizerEmail: user.email,
+                            organizerName: user.name,
+                            participants: completed.length,
+                            totalPajskAwarded: completed.reduce((s, r) => s + (r.totalPajsk || 0), 0),
+                            status: 'submitted',
+                            submittedAt: Date.now()
+                        });
+                        comp.status = 'completed';
+                        comp.completedAt = Date.now();
+                        await DB.Competitions.put(comp);
+                        showToast(I18N.t('org.report_submitted'), 'check-circle');
+                        render();
+                    } catch (err) {
+                        console.error(err);
+                        showToast(I18N.t('org.report_failed'), 'exclamation-circle');
+                    }
+                });
+            });
+        }
+
+        init();
+    </script>
+</body>
+
+</html>

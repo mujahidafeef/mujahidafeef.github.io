@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>EduMinat · KPM</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="logo"><i class="fas fa-rocket"></i> <span>EduMinat</span></div>
+      <div class="user-card">
+        <div class="avatar" id="avatar">K</div>
+        <div class="info">
+          <strong id="userName">Loading...</strong>
+          <span data-i18n="role.kpm"></span>
+        </div>
+      </div>
+      <nav class="nav">
+        <div class="nav-item active" data-tab="queue"><i class="fas fa-check-double"></i> <span data-i18n="nav.queue"></span></div>
+        <div class="nav-item" data-tab="all"><i class="fas fa-list"></i> <span data-i18n="nav.all_comps"></span></div>
+        <div class="nav-item" data-tab="analytics"><i class="fas fa-chart-bar"></i> <span data-i18n="nav.analytics"></span></div>
+        <div class="nav-item" data-tab="reports"><i class="fas fa-file-signature"></i> <span data-i18n="nav.reports"></span></div>
+        <div class="nav-item" onclick="DB.resetDemo()"><i class="fas fa-rotate-left"></i> <span data-i18n="nav.reset"></span></div>
+        <div class="nav-item logout" onclick="DB.logout()"><i class="fas fa-sign-out-alt"></i> <span data-i18n="nav.logout"></span></div>
+      </nav>
+    </aside>
+    <main class="main" id="main"></main>
+  </div>
+
+  <div class="toast" id="toast"><i class="fas fa-check-circle"></i><span id="toastMsg"></span></div>
+
+  <div id="tourBanner" class="tour-banner hidden">
+    <div class="tour-content">
+      <div class="tour-icon"><i class="fas fa-graduation-cap"></i></div>
+      <div class="tour-text">
+        <strong id="tourTitle"></strong>
+        <p id="tourBody"></p>
+        <ol id="tourSteps"></ol>
+      </div>
+      <button class="tour-dismiss" onclick="dismissTour()">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="dismissTour()" id="tourDismissBtn"></button>
+  </div>
+
+  <script src="scripts/html2pdf.bundle.min.js"></script>
+  <script src="scripts/chart.umd.min.js"></script>
+  <script src="scripts/i18n.js"></script>
+  <script src="scripts/tour.js"></script>
+  <script src="scripts/db.js"></script>
+  <script>
+    let user = null;
+    let currentTab = 'queue';
+
+    document.addEventListener('languagechange', () => {
+      I18N.injectLanguageSwitcher();
+      I18N.applyI18n();
+      render();
+    });
+
+    async function init() {
+      await DB.openDB();
+      await DB.seedDemoData();
+
+      I18N.injectLanguageSwitcher();
+      I18N.applyI18n();
+
+      const session = await DB.currentUser();
+      user = session ? await DB.Users.get(session.email) : null;
+      if (!user || user.role !== 'kpm') {
+        window.location.href = 'login.html';
+        return;
+      }
+
+      document.getElementById('userName').innerText = user.name;
+      document.getElementById('avatar').innerText = user.name.charAt(0).toUpperCase();
+
+      document.querySelectorAll('.nav-item[data-tab]').forEach(el => {
+        el.addEventListener('click', () => {
+          document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+          el.classList.add('active');
+          currentTab = el.dataset.tab;
+          render();
+        });
+      });
+
+      render();
+    }
+
+    async function render() {
+      const main = document.getElementById('main');
+      main.innerHTML = `<div class="empty"><i class="fas fa-spinner fa-spin"></i>${I18N.t('common.loading')}</div>`;
+
+      try {
+        if (currentTab === 'queue') main.innerHTML = await renderQueue();
+        else if (currentTab === 'analytics') main.innerHTML = await renderAnalytics();
+        else if (currentTab === 'all') main.innerHTML = await renderAll();
+        else if (currentTab === 'reports') main.innerHTML = await renderReports();
+        attachHandlers();
+      } catch (err) {
+        console.error(err);
+        main.innerHTML = `<div class="card"><div class="empty">
+          <i class="fas fa-exclamation-triangle"></i>${I18N.t('common.error')}: ${err.message}
+        </div></div>`;
+      }
+
+      // After the main content is inserted into #main:
+      if (typeof renderTour === 'function') renderTour();
+    }
+
+    async function renderQueue() {
+      const pending = await DB.Competitions.byStatus('pending');
+      const approved = await DB.Competitions.byStatus('approved');
+
+      return `
+        <div class="header"><h1>${I18N.t('kpm.queue_title')}</h1></div>
+
+        <div class="grid-3">
+          <div class="stat"><div class="label">${I18N.t('kpm.waiting')}</div><div class="value">${pending.length}</div></div>
+          <div class="stat"><div class="label">${I18N.t('kpm.approved')}</div><div class="value">${approved.length}</div></div>
+          <div class="stat"><div class="label">${I18N.t('kpm.total')}</div><div class="value">${pending.length + approved.length}</div></div>
+        </div>
+
+        <div class="card">
+          <h3>${I18N.t('kpm.queue_title')}</h3>
+          ${pending.length === 0 ? emptyState(I18N.t('kpm.no_pending')) : `
+            <table>
+              <tr>
+                <th>${I18N.t('th.competition')}</th>
+                <th>${I18N.t('th.organizer')}</th>
+                <th>${I18N.t('th.level')}</th>
+                <th>${I18N.t('th.marks')}</th>
+                <th></th>
+              </tr>
+              ${pending.map(c => `
+                <tr>
+                  <td><strong>${c.name}</strong><br>
+                    <span class="text-muted" style="font-size:0.8rem;">${c.description || ''}</span>
+                  </td>
+                  <td>${c.organizerName}</td>
+                  <td>${DB.levelLabel(c.level)}</td>
+                  <td><span class="badge badge-info">${c.participationScore} – ${c.participationScore + (c.maxAchievementScore||0)}</span></td>
+                  <td class="flex">
+                    <button class="btn btn-success btn-sm" data-approve="${c.id}">${I18N.t('common.approve')}</button>
+                    <button class="btn btn-danger btn-sm" data-reject="${c.id}">${I18N.t('common.reject')}</button>
+                  </td>
+                </tr>
+              `).join('')}
+            </table>
+          `}
+        </div>
+      `;
+    }
+
+    async function renderAll() {
+      const all = await DB.Competitions.all();
+      return `
+        <div class="header"><h1>${I18N.t('nav.all_comps')}</h1></div>
+        <div class="card">
+          ${all.length === 0 ? emptyState(I18N.t('kpm.no_comps')) : `
+            <table>
+              <tr>
+                <th>${I18N.t('th.name')}</th>
+                <th>${I18N.t('th.organizer')}</th>
+                <th>${I18N.t('th.level')}</th>
+                <th>${I18N.t('th.status')}</th>
+              </tr>
+              ${all.map(c => `
+                <tr>
+                  <td>${c.name}</td>
+                  <td>${c.organizerName}</td>
+                  <td>${DB.levelLabel(c.level)}</td>
+                  <td><span class="badge ${
+                    c.status === 'approved'  ? 'badge-success'
+                    : c.status === 'pending'   ? 'badge-warning'
+                    : c.status === 'rejected'  ? 'badge-danger'
+                    : c.status === 'completed' ? 'badge-info'
+                    : 'badge-secondary'
+                  }">${DB.statusLabel(c.status)}</span></td>
+                </tr>
+              `).join('')}
+            </table>
+          `}
+        </div>
+      `;
+    }
+
+    // ============================================================
+    //  TAB: ANALYTICS
+    // ============================================================
+    async function renderAnalytics() {
+      const comps = await DB.Competitions.all();
+      const regs = await DB.Registrations.all();
+      const marks = await DB.Marks.all();
+      const students = await DB.Users.byRole('student');
+
+      // ---------- KPI computations ----------
+      // "Schools" — in this demo, treat each unique class as a school
+      const uniqueClasses = new Set(students.map(s => s.class).filter(Boolean));
+      const schoolsCount = uniqueClasses.size;
+
+      const activeStudents = new Set(
+        regs.filter(r => r.status === 'registered' || r.status === 'ongoing')
+        .map(r => r.studentEmail)
+      ).size;
+
+      const totalMarks = marks.reduce((sum, m) => sum + (m.marks || 0), 0);
+
+      // Avg PAJSK — average across all students
+      let totalPajsk = 0;
+      for (const s of students) {
+        const p = await DB.calculatePajsk(s.email);
+        totalPajsk += p.total;
+      }
+      const avgPajsk = students.length ? (totalPajsk / students.length) : 0;
+
+      // ---------- Chart data ----------
+      // 1. Competitions by level
+      const levelOrder = ['antarabangsa', 'kebangsaan', 'negeri', 'bahagian', 'zon_daerah'];
+      const levelCounts = levelOrder.map(lvl => ({
+        level: lvl,
+        count: comps.filter(c => c.level === lvl).length
+      }));
+
+      // 2. Competitions by category
+      const categories = [...new Set(comps.map(c => c.category).filter(Boolean))];
+      const categoryCounts = categories.map(cat => ({
+        category: cat,
+        count: comps.filter(c => c.category === cat).length
+      }));
+
+      // 3. PAJSK awarded over last 6 months
+      const months = [];
+      const monthLabels = [];
+      const now = new Date();
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        months.push({
+          year: d.getFullYear(),
+          month: d.getMonth()
+        });
+        monthLabels.push(d.toLocaleDateString(I18N.getLanguage() === 'en' ? 'en-MY' : 'ms-MY', {
+          month: 'short',
+          year: 'numeric'
+        }));
+      }
+
+      const marksByMonth = months.map(m => {
+        return marks
+          .filter(mk => {
+            const d = new Date(mk.awardedAt || 0);
+            return d.getFullYear() === m.year && d.getMonth() === m.month;
+          })
+          .reduce((sum, mk) => sum + (mk.marks || 0), 0);
+      });
+
+      // If all zeros, that's fine — chart will show empty line
+
+      // ---------- Render ----------
+      return `
+        <div class="header"><h1>${I18N.t('kpm.analytics_title')}</h1></div>
+
+        <div class="grid-4">
+          <div class="stat">
+            <div class="label">${I18N.t('kpm.kpi_schools')}</div>
+            <div class="value">${schoolsCount}</div>
+            <div class="sub">${students.length} total students</div>
+          </div>
+          <div class="stat">
+            <div class="label">${I18N.t('kpm.kpi_students')}</div>
+            <div class="value">${activeStudents}</div>
+            <div class="sub">${comps.filter(c => c.status === 'approved').length} open competitions</div>
+          </div>
+          <div class="stat">
+            <div class="label">${I18N.t('kpm.kpi_avg_pajsk')}</div>
+            <div class="value">${avgPajsk.toFixed(1)}</div>
+            <div class="sub">across all students</div>
+          </div>
+          <div class="stat">
+            <div class="label">${I18N.t('kpm.kpi_total_marks')}</div>
+            <div class="value">${totalMarks}</div>
+            <div class="sub">from ${marks.length} awards</div>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <h3>${I18N.t('kpm.chart_by_level')}</h3>
+            <div style="position:relative;height:280px;">
+              <canvas id="chartLevel"></canvas>
+            </div>
+          </div>
+          <div class="card">
+            <h3>${I18N.t('kpm.chart_by_category')}</h3>
+            <div style="position:relative;height:280px;">
+              <canvas id="chartCategory"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>${I18N.t('kpm.chart_pajsk_trend')}</h3>
+          <div style="position:relative;height:260px;">
+            <canvas id="chartTrend"></canvas>
+          </div>
+        </div>
+      `;
+    }
+
+    async function renderReports() {
+      const reports = await DB.Reports.all();
+      const submitted = reports.filter(r => r.status === 'submitted');
+      const acknowledged = reports.filter(r => r.status === 'acknowledged');
+      reports.sort((a, b) => (b.submittedAt || 0) - (a.submittedAt || 0));
+
+      return `
+        <div class="header"><h1>${I18N.t('kpm.reports_title')}</h1></div>
+
+        <div class="grid-3">
+          <div class="stat"><div class="label">${I18N.t('kpm.pending')}</div><div class="value">${submitted.length}</div><div class="sub">${I18N.t('kpm.pending_sub')}</div></div>
+          <div class="stat"><div class="label">${I18N.t('kpm.verified')}</div><div class="value">${acknowledged.length}</div><div class="sub">${I18N.t('kpm.verified_sub')}</div></div>
+          <div class="stat"><div class="label">${I18N.t('kpm.total')}</div><div class="value">${reports.length}</div><div class="sub"></div></div>
+        </div>
+
+        <div class="card">
+          <h3>${I18N.t('kpm.reports')}</h3>
+          ${reports.length === 0 ? emptyState(I18N.t('kpm.no_reports')) : `
+            <table>
+              <tr>
+                <th>${I18N.t('th.competition')}</th>
+                <th>${I18N.t('th.organizer')}</th>
+                <th>${I18N.t('th.participants')}</th>
+                <th>${I18N.t('th.total_pajsk')}</th>
+                <th>${I18N.t('th.status')}</th>
+                <th></th>
+              </tr>
+              ${reports.map(r => `
+                <tr>
+                  <td><strong>${r.competitionName}</strong></td>
+                  <td>${r.organizerName}</td>
+                  <td>${r.participants}</td>
+                  <td><strong>${r.totalPajskAwarded}</strong></td>
+                  <td>
+                    <span class="badge ${
+                      r.status === 'submitted'      ? 'badge-warning'
+                      : r.status === 'acknowledged' ? 'badge-success'
+                      : 'badge-secondary'
+                    }">${DB.statusLabel(r.status)}</span>
+                  </td>
+                  <td>
+                    ${r.status === 'submitted'
+                      ? `<button class="btn btn-primary btn-sm" data-ack="${r.id}">
+                           <i class="fas fa-check"></i> ${I18N.t('common.acknowledge')}
+                         </button>`
+                      : r.status === 'acknowledged'
+                        ? `<button class="btn btn-success btn-sm" data-download-pdf="${r.id}">
+                             <i class="fas fa-file-pdf"></i> ${I18N.t('common.download_pdf')}
+                           </button>`
+                        : '—'}
+                  </td>
+                </tr>
+              `).join('')}
+            </table>
+          `}
+        </div>
+      `;
+    }
+
+    // ============ LETTER (always BM — official) ============
+    function buildAcknowledgementLetter(report, comp, participants) {
+      const today = new Date(report.acknowledgedAt || Date.now());
+      const dateStr = today.toLocaleDateString('ms-MY', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+      });
+
+      const participantRows = participants.map((p, i) => `
+        <tr>
+          <td style="border:1px solid #999; padding:6px 8px; text-align:center;">${i + 1}</td>
+          <td style="border:1px solid #999; padding:6px 8px;">${p.studentName}</td>
+          <td style="border:1px solid #999; padding:6px 8px;">${p.studentClass || '—'}</td>
+          <td style="border:1px solid #999; padding:6px 8px;">${p.resultLabel}</td>
+          <td style="border:1px solid #999; padding:6px 8px; text-align:center;">${p.totalPajsk}</td>
+        </tr>
+      `).join('');
+
+      return `
+        <div style="font-family:'Times New Roman',Times,serif;font-size:11pt;line-height:1.55;color:#111;padding:20mm 18mm;background:white;width:210mm;min-height:297mm;box-sizing:border-box;">
+          <div style="text-align:center;border-bottom:3px double #333;padding-bottom:12px;margin-bottom:18px;">
+            <div style="font-weight:bold;font-size:13pt;">BAHAGIAN SUKAN, KOKURIKULUM DAN KESENIAN</div>
+            <div style="font-weight:bold;font-size:15pt;">KEMENTERIAN PENDIDIKAN MALAYSIA</div>
+            <div style="font-size:9pt;margin-top:4px;color:#333;">
+              Aras 1, 2 &amp; 7, Blok E13, Kompleks E<br>
+              Pusat Pentadbiran Kerajaan Persekutuan<br>
+              62604 PUTRAJAYA MALAYSIA
+            </div>
+            <div style="font-size:8.5pt;color:#555;margin-top:4px;">
+              Telefon: +603 8884 1001 / +603 8884 1002 &nbsp;|&nbsp;
+              Faks: +603 8884 1034 &nbsp;|&nbsp; Laman Web: www.moe.gov.my
+            </div>
+          </div>
+
+          <table style="width:100%;font-size:10.5pt;margin-bottom:18px;">
+            <tr>
+              <td><strong>Ruj. Kami:</strong> KPM.600-4/1/1 Jld. 5 ( ${report.id} )</td>
+              <td style="text-align:right;"><strong>Tarikh:</strong> ${dateStr}</td>
+            </tr>
+          </table>
+
+          <div style="margin-bottom:18px;">
+            <div style="font-weight:bold;">${report.organizerName}</div>
+            <div>${report.organizerEmail}</div>
+          </div>
+
+          <p>Tuan/Puan,</p>
+
+          <p style="font-weight:bold;text-transform:uppercase;margin:12px 0;">
+            PENGIKTIRAFAN MARKAH KOKURIKULUM PENGLIBATAN MURID BAGI PROGRAM
+            ${report.competitionName.toUpperCase()} TAHUN ${today.getFullYear()}
+          </p>
+
+          <p>Dengan segala hormatnya saya merujuk perkara di atas.</p>
+
+          <p style="text-align:justify;">
+            2.&nbsp;&nbsp;&nbsp;Sukacita dimaklumkan bahawa Kementerian Pendidikan (KPM)
+            mengucapkan tahniah atas usaha pihak <strong>${report.organizerName}</strong>
+            kerana telah memberi peluang kepada murid meningkatkan potensi diri serta
+            menaikkan nama sekolah melalui program <strong>${report.competitionName}</strong>.
+          </p>
+
+          <p style="text-align:justify;">
+            3.&nbsp;&nbsp;&nbsp;Bahagian Sukan, Kokurikulum dan Kesenian (BSKK) telah
+            menerima serta meneliti laporan penglibatan murid bagi program yang dianjurkan.
+            Sehubungan dengan itu, pengiktirafan pemarkahan yang diberikan adalah
+            penglibatan <strong>${DB.KPM_SCORING.levelLabels[comp.level]}</strong>
+            (${DB.KPM_SCORING.engagementLabels[comp.engagementType]}) bagi penyertaan
+            dan pencapaian murid di dalam program ini. Markah ini diambil kira dalam
+            pemarkahan penglibatan kokurikulum dalam Pentaksiran Aktiviti, Jasmani,
+            Sukan dan Kokurikulum (PAJSK).
+          </p>
+
+          <table style="width:100%;border-collapse:collapse;margin:14px 0;font-size:10.5pt;">
+            <tr>
+              <td style="border:1px solid #999;padding:8px 10px;background:#f4f4f4;font-weight:bold;width:60%;">
+                Skor Penglibatan (${DB.KPM_SCORING.levelLabels[comp.level]}, Penglibatan ${comp.engagementType})
+              </td>
+              <td style="border:1px solid #999;padding:8px 10px;text-align:right;">
+                <strong>${comp.participationScore} mata</strong>
+              </td>
+            </tr>
+            <tr>
+              <td style="border:1px solid #999;padding:8px 10px;background:#f4f4f4;font-weight:bold;">
+                Skor Pencapaian Maksimum (Johan)
+              </td>
+              <td style="border:1px solid #999;padding:8px 10px;text-align:right;">
+                <strong>${comp.maxAchievementScore || 0} mata</strong>
+              </td>
+            </tr>
+            <tr>
+              <td style="border:1px solid #999;padding:8px 10px;background:#e8e8ff;font-weight:bold;">
+                Jumlah Keseluruhan Diagihkan
+              </td>
+              <td style="border:1px solid #999;padding:8px 10px;text-align:right;background:#e8e8ff;">
+                <strong>${report.totalPajskAwarded} mata</strong>
+              </td>
+            </tr>
+          </table>
+
+          <p style="text-align:justify;">
+            4.&nbsp;&nbsp;&nbsp;Sehubungan dengan itu, pihak tuan dimohon untuk
+            memanjangkan salinan surat pengiktirafan program berserta nama peserta
+            yang terlibat kepada sekolah yang menyertai program berkenaan. Senarai
+            peserta adalah seperti di Lampiran A.
+          </p>
+
+          <p style="text-align:justify;">
+            5.&nbsp;&nbsp;&nbsp;Sebarang pertanyaan berhubung perkara ini, pihak tuan
+            boleh menghubungi pegawai kami di talian 03-8884 1179 atau melalui e-mel
+            <span style="color:#1a5bbf;">bskk@moe.gov.my</span>. Kerjasama dan
+            perhatian pihak tuan berkaitan perkara ini didahului dengan ucapan
+            terima kasih. Sekian.
+          </p>
+
+          <p style="margin-top:18px;">"MALAYSIA MADANI"<br>"BERKHIDMAT UNTUK NEGARA"</p>
+          <p style="margin-top:14px;">Saya yang menjalankan amanah,</p>
+
+          <div style="margin-top:36px;">
+            <div style="border-bottom:1px solid #333;width:240px;height:40px;"></div>
+            <div style="font-weight:bold;margin-top:6px;">( ITHNIN BIN MAHADI )</div>
+            <div>Pengarah</div>
+            <div>Bahagian Sukan, Kokurikulum dan Kesenian</div>
+            <div>Kementerian Pendidikan Malaysia</div>
+          </div>
+
+          <div style="margin-top:24px;font-size:8.5pt;color:#888;border-top:1px solid #ccc;padding-top:6px;">
+            Dokumen ini dijana secara automatik oleh sistem EduMinat pada
+            ${today.toLocaleString('ms-MY')}. Sila simpan untuk rekod rasmi.
+          </div>
+        </div>
+
+        <div style="font-family:'Times New Roman',Times,serif;font-size:10pt;color:#111;padding:20mm 18mm;background:white;width:210mm;min-height:297mm;box-sizing:border-box;page-break-before:always;">
+          <div style="font-weight:bold;font-size:12pt;margin-bottom:12px;">LAMPIRAN A — SENARAI PESERTA</div>
+          <div style="font-size:10.5pt;margin-bottom:14px;">
+            <strong>Program:</strong> ${report.competitionName}<br>
+            <strong>Penganjur:</strong> ${report.organizerName}<br>
+            <strong>Peringkat:</strong> ${DB.KPM_SCORING.levelLabels[comp.level]}<br>
+            <strong>Tarikh:</strong> ${dateStr}
+          </div>
+
+          <table style="width:100%;border-collapse:collapse;font-size:10pt;">
+            <thead>
+              <tr style="background:#e8e8ff;">
+                <th style="border:1px solid #999;padding:8px 6px;width:8%;">Bil.</th>
+                <th style="border:1px solid #999;padding:8px 6px;width:42%;">Nama Pelajar</th>
+                <th style="border:1px solid #999;padding:8px 6px;width:20%;">Kelas</th>
+                <th style="border:1px solid #999;padding:8px 6px;width:20%;">Keputusan</th>
+                <th style="border:1px solid #999;padding:8px 6px;width:10%;">Mata PAJSK</th>
+              </tr>
+            </thead>
+            <tbody>${participantRows}</tbody>
+            <tfoot>
+              <tr style="background:#f4f4f4;font-weight:bold;">
+                <td colspan="4" style="border:1px solid #999;padding:8px 6px;text-align:right;">JUMLAH</td>
+                <td style="border:1px solid #999;padding:8px 6px;text-align:center;">${report.totalPajskAwarded}</td>
+              </tr>
+            </tfoot>
+          </table>
+
+          <div style="margin-top:24px;font-size:9pt;color:#555;">
+            <em>Senarai ini dijana oleh sistem dan disahkan oleh Bahagian Sukan,
+            Kokurikulum dan Kesenian, Kementerian Pendidikan Malaysia.</em>
+          </div>
+        </div>
+      `;
+    }
+
+    async function downloadAcknowledgementPDF(reportId) {
+      try {
+        showToast(I18N.t('kpm.pdf_preparing'), 'spinner');
+
+        const report = await DB.Reports.get(reportId);
+        const comp = await DB.Competitions.get(report.competitionId);
+        const regs = await DB.Registrations.byCompetition(comp.id);
+        const students = await DB.Users.all();
+        const studentMap = Object.fromEntries(students.map(s => [s.email, s]));
+
+        const participants = regs
+          .filter(r => r.status === 'completed')
+          .map(r => {
+            const s = studentMap[r.studentEmail];
+            return {
+              studentName: s?.name || r.studentEmail,
+              studentClass: s?.class || '',
+              resultLabel: DB.KPM_SCORING.resultLabels[r.result] || r.result,
+              totalPajsk: r.totalPajsk || 0
+            };
+          });
+
+        const container = document.createElement('div');
+        container.innerHTML = buildAcknowledgementLetter(report, comp, participants);
+        container.style.position = 'fixed';
+        container.style.left = '-10000px';
+        container.style.top = '0';
+        document.body.appendChild(container);
+
+        const safeName = report.competitionName.replace(/[^a-z0-9]/gi, '_');
+        const filename = `Pengiktirafan_${safeName}_${report.id}.pdf`;
+
+        await html2pdf().set({
+          margin: 0,
+          filename,
+          image: {
+            type: 'jpeg',
+            quality: 0.95
+          },
+          html2canvas: {
+            scale: 2,
+            useCORS: true,
+            letterRendering: true
+          },
+          jsPDF: {
+            unit: 'mm',
+            format: 'a4',
+            orientation: 'portrait'
+          },
+          pagebreak: {
+            mode: ['css', 'legacy']
+          }
+        }).from(container).save();
+
+        document.body.removeChild(container);
+        showToast(I18N.t('kpm.pdf_success'), 'file-pdf');
+      } catch (err) {
+        console.error(err);
+        showToast(I18N.t('kpm.pdf_failed'), 'exclamation-circle');
+      }
+    }
+
+    function attachHandlers() {
+      document.querySelectorAll('[data-approve]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = parseInt(btn.dataset.approve, 10);
+          const comp = await DB.Competitions.get(id);
+          comp.status = 'approved';
+          await DB.Competitions.put(comp);
+          showToast(I18N.t('kpm.approved_toast'), 'check-circle');
+          render();
+        });
+      });
+
+      document.querySelectorAll('[data-reject]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = parseInt(btn.dataset.reject, 10);
+          const comp = await DB.Competitions.get(id);
+          comp.status = 'rejected';
+          await DB.Competitions.put(comp);
+          showToast(I18N.t('kpm.rejected_toast'), 'times-circle');
+          render();
+        });
+      });
+
+      document.querySelectorAll('[data-ack]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = parseInt(btn.dataset.ack, 10);
+          const report = await DB.Reports.get(id);
+          report.status = 'acknowledged';
+          report.acknowledgedAt = Date.now();
+          await DB.Reports.put(report);
+          showToast(I18N.t('kpm.ack_toast'), 'check-circle');
+          render();
+        });
+      });
+
+      document.querySelectorAll('[data-download-pdf]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const reportId = parseInt(btn.dataset.downloadPdf, 10);
+          btn.disabled = true;
+          const original = btn.innerHTML;
+          btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${I18N.t('common.generating')}`;
+          try {
+            await downloadAcknowledgementPDF(reportId);
+          } finally {
+            btn.disabled = false;
+            btn.innerHTML = original;
+          }
+        });
+      });
+
+      // ============================================================
+      // CHARTS — initialize after the canvases exist in the DOM
+      // ============================================================
+      initAnalyticsCharts();
+    }
+
+    // ============================================================
+    // CHART.JS INITIALIZATION
+    // ============================================================
+    let chartInstances = {}; // keep references so we can destroy on re-render
+
+    async function initAnalyticsCharts() {
+      const levelCanvas = document.getElementById('chartLevel');
+      const categoryCanvas = document.getElementById('chartCategory');
+      const trendCanvas = document.getElementById('chartTrend');
+
+      // Not on analytics tab → nothing to do
+      if (!levelCanvas || !categoryCanvas || !trendCanvas) return;
+
+      // Destroy any old charts (prevents "Canvas already in use" errors)
+      Object.values(chartInstances).forEach(c => c && c.destroy());
+      chartInstances = {};
+
+      // Fetch data (same as renderAnalytics — could be refactored into a shared function)
+      const comps = await DB.Competitions.all();
+      const marks = await DB.Marks.all();
+
+      const isEN = I18N.getLanguage() === 'en';
+      const lang = isEN ? 'en-MY' : 'ms-MY';
+
+      // ---------- 1. Competitions by level (bar) ----------
+      const levelOrder = ['antarabangsa', 'kebangsaan', 'negeri', 'bahagian', 'zon_daerah'];
+      const levelLabels = levelOrder.map(lvl => DB.levelLabel(lvl));
+      const levelCounts = levelOrder.map(lvl =>
+        comps.filter(c => c.level === lvl).length
+      );
+
+      chartInstances.level = new Chart(levelCanvas, {
+        type: 'bar',
+        data: {
+          labels: levelLabels,
+          datasets: [{
+            label: isEN ? 'Competitions' : 'Pertandingan',
+            data: levelCounts,
+            backgroundColor: '#6A4CFF',
+            borderRadius: 8,
+            maxBarThickness: 60
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              display: false
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: {
+                precision: 0
+              }
+            }
+          }
+        }
+      });
+
+      // ---------- 2. Competitions by category (doughnut) ----------
+      const categories = [...new Set(comps.map(c => c.category).filter(Boolean))];
+      const categoryCounts = categories.map(cat =>
+        comps.filter(c => c.category === cat).length
+      );
+
+      const palette = ['#6A4CFF', '#00D4FF', '#2ECC71', '#FF9F43', '#FF6B8B', '#9b8cff'];
+
+      chartInstances.category = new Chart(categoryCanvas, {
+        type: 'doughnut',
+        data: {
+          labels: categories,
+          datasets: [{
+            data: categoryCounts,
+            backgroundColor: palette.slice(0, categories.length),
+            borderWidth: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: {
+                padding: 14,
+                boxWidth: 12
+              }
+            }
+          },
+          cutout: '60%'
+        }
+      });
+
+      // ---------- 3. PAJSK awarded over last 6 months (line) ----------
+      const monthKeys = [];
+      const monthLabels = [];
+      const now = new Date();
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        monthKeys.push({
+          y: d.getFullYear(),
+          m: d.getMonth()
+        });
+        monthLabels.push(d.toLocaleDateString(lang, {
+          month: 'short',
+          year: '2-digit'
+        }));
+      }
+
+      const trendData = monthKeys.map(k =>
+        marks
+        .filter(mk => {
+          const d = new Date(mk.awardedAt || 0);
+          return d.getFullYear() === k.y && d.getMonth() === k.m;
+        })
+        .reduce((sum, mk) => sum + (mk.marks || 0), 0)
+      );
+
+      chartInstances.trend = new Chart(trendCanvas, {
+        type: 'line',
+        data: {
+          labels: monthLabels,
+          datasets: [{
+            label: isEN ? 'PAJSK awarded' : 'Mata PAJSK diagihkan',
+            data: trendData,
+            borderColor: '#6A4CFF',
+            backgroundColor: 'rgba(106, 76, 255, 0.1)',
+            borderWidth: 3,
+            fill: true,
+            tension: 0.35,
+            pointRadius: 5,
+            pointBackgroundColor: '#6A4CFF'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              display: false
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: {
+                precision: 0
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function emptyState(msg) {
+      return `<div class="empty"><i class="fas fa-inbox"></i>${msg}</div>`;
+    }
+
+    function showToast(msg, icon = 'check-circle') {
+      const tEl = document.getElementById('toast');
+      document.getElementById('toastMsg').innerText = msg;
+      const iconEl = tEl.querySelector('i');
+      iconEl.className = icon === 'spinner' ? 'fas fa-spinner fa-spin' : `fas fa-${icon}`;
+      tEl.classList.add('show');
+      clearTimeout(tEl._hideTimer);
+      if (icon !== 'spinner') {
+        tEl._hideTimer = setTimeout(() => tEl.classList.remove('show'), 2200);
+      }
+    }
+
+    init();
+  </script>
+</body>
+
+</html>

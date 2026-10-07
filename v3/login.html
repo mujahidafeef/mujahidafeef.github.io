@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>EduMinat · Login</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body class="login-body">
+  <div class="login-wrapper">
+    <div class="login-left">
+      <div>
+        <div class="logo"><i class="fas fa-rocket"></i><span>EduMinat</span></div>
+        <h2 data-i18n="login.headline"></h2>
+        <p data-i18n="login.subtext"></p>
+        <div class="features">
+          <div class="feature-item"><i class="fas fa-check-circle"></i> <span data-i18n="login.feat1"></span></div>
+          <div class="feature-item"><i class="fas fa-chart-line"></i> <span data-i18n="login.feat2"></span></div>
+          <div class="feature-item"><i class="fas fa-users"></i> <span data-i18n="login.feat3"></span></div>
+          <div class="feature-item"><i class="fas fa-file-signature"></i> <span data-i18n="login.feat4"></span></div>
+        </div>
+      </div>
+      <div style="font-size:0.85rem; opacity:0.7; margin-top:2rem;">© 2026 EduMinat · Demo</div>
+    </div>
+
+    <div class="login-right">
+      <h3 data-i18n="login.welcome"></h3>
+      <p class="sub" data-i18n="login.pick_role"></p>
+
+      <form id="loginForm">
+        <div class="form-group">
+          <label data-i18n="login.iam"></label>
+          <div class="input-group">
+            <i class="fas fa-user-tag"></i>
+            <select id="roleSelect">
+              <option value="student" data-i18n="role.student"></option>
+              <option value="parent" data-i18n="role.parent"></option>
+              <option value="teacher" data-i18n="role.teacher"></option>
+              <option value="organizer" data-i18n="role.organizer"></option>
+              <option value="kpm" data-i18n="role.kpm"></option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label data-i18n="login.email"></label>
+          <div class="input-group">
+            <i class="fas fa-envelope"></i>
+            <input type="email" id="username" readonly>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label data-i18n="login.password"></label>
+          <div class="input-group">
+            <i class="fas fa-lock"></i>
+            <input type="text" id="password" readonly>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block">
+          <i class="fas fa-sign-in-alt"></i> <span data-i18n="login.btn"></span>
+        </button>
+        <p class="hint"><i class="fas fa-info-circle"></i> <span data-i18n="login.hint"></span></p>
+      </form>
+
+      <div class="lang-switcher" style="margin-top:1.2rem;">
+        <button class="lang-btn" data-lang="my">BM</button>
+        <button class="lang-btn" data-lang="en">EN</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"><i class="fas fa-check-circle"></i><span id="toastMsg"></span></div>
+
+  <script src="scripts/i18n.js"></script>
+  <script src="scripts/db.js"></script>
+  <script>
+    const demoAccounts = {
+      student: {
+        username: 'mujahid@eduminat.my',
+        password: 'student123'
+      },
+      parent: {
+        username: 'parent@eduminat.my',
+        password: 'parent123'
+      },
+      teacher: {
+        username: 'teacher@eduminat.my',
+        password: 'teacher123'
+      },
+      organizer: {
+        username: 'organizer@eduminat.my',
+        password: 'organizer123'
+      },
+      kpm: {
+        username: 'kpm@eduminat.my',
+        password: 'kpm123'
+      }
+    };
+
+    const roleSelect = document.getElementById('roleSelect');
+    const usernameInput = document.getElementById('username');
+    const passwordInput = document.getElementById('password');
+
+    function fill(role) {
+      const acc = demoAccounts[role];
+      if (acc) {
+        usernameInput.value = acc.username;
+        passwordInput.value = acc.password;
+      }
+    }
+
+    roleSelect.addEventListener('change', e => fill(e.target.value));
+
+    // Apply translations on load
+    function refresh() {
+      I18N.applyI18n();
+      // Update active state on lang buttons
+      document.querySelectorAll('.lang-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.lang === I18N.getLanguage());
+      });
+    }
+
+    document.querySelectorAll('.lang-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        I18N.setLanguage(btn.dataset.lang);
+        refresh();
+      });
+    });
+
+    document.addEventListener('languagechange', refresh);
+
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const role = roleSelect.value;
+      const email = usernameInput.value;
+      const password = passwordInput.value;
+
+      await DB.openDB();
+      await DB.seedDemoData();
+
+      const user = await DB.Users.get(email);
+      if (!user || user.password !== password) {
+        showToast(I18N.t('login.invalid'), 'exclamation-circle');
+        return;
+      }
+
+      await DB.Session.set({
+        email: user.email,
+        role: user.role,
+        name: user.name
+      });
+
+      const pages = {
+        student: 'student-dashboard.html',
+        parent: 'parent-dashboard.html',
+        teacher: 'teacher-dashboard.html',
+        organizer: 'organizer-dashboard.html',
+        kpm: 'kpm-dashboard.html'
+      };
+
+      showToast(I18N.t('login.welcome_user', {
+        name: user.name
+      }), 'check-circle');
+      setTimeout(() => window.location.href = pages[role], 700);
+    });
+
+    function showToast(msg, icon = 'check-circle') {
+      const tEl = document.getElementById('toast');
+      document.getElementById('toastMsg').innerText = msg;
+      tEl.querySelector('i').className = `fas fa-${icon}`;
+      tEl.classList.add('show');
+      setTimeout(() => tEl.classList.remove('show'), 2200);
+    }
+
+    refresh();
+    fill(roleSelect.value);
+  </script>
+</body>
+
+</html>

@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>EduMinat · Student</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="logo"><i class="fas fa-rocket"></i> <span>EduMinat</span></div>
+      <div class="user-card">
+        <div class="avatar" id="avatar">S</div>
+        <div class="info">
+          <strong id="userName">Loading...</strong>
+          <span data-i18n="role.student"></span>
+        </div>
+      </div>
+      <nav class="nav">
+        <div class="nav-item active" data-tab="dashboard"><i class="fas fa-th-large"></i> <span data-i18n="nav.dashboard"></span></div>
+        <div class="nav-item" data-tab="browse"><i class="fas fa-trophy"></i> <span data-i18n="nav.browse"></span></div>
+        <div class="nav-item" data-tab="mycomps"><i class="fas fa-list-check"></i> <span data-i18n="nav.mycomps"></span></div>
+        <div class="nav-item" data-tab="pajsk"><i class="fas fa-star"></i> <span data-i18n="nav.pajsk"></span></div>
+        <div class="nav-item" onclick="DB.resetDemo()"><i class="fas fa-rotate-left"></i> <span data-i18n="nav.reset"></span></div>
+        <div class="nav-item logout" onclick="DB.logout()"><i class="fas fa-sign-out-alt"></i> <span data-i18n="nav.logout"></span></div>
+      </nav>
+    </aside>
+
+    <main class="main" id="main"></main>
+  </div>
+
+  <div class="toast" id="toast"><i class="fas fa-check-circle"></i><span id="toastMsg"></span></div>
+
+  <div id="tourBanner" class="tour-banner hidden">
+    <div class="tour-content">
+      <div class="tour-icon"><i class="fas fa-graduation-cap"></i></div>
+      <div class="tour-text">
+        <strong id="tourTitle"></strong>
+        <p id="tourBody"></p>
+        <ol id="tourSteps"></ol>
+      </div>
+      <button class="tour-dismiss" onclick="dismissTour()">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="dismissTour()" id="tourDismissBtn"></button>
+  </div>
+
+  <script src="scripts/i18n.js"></script>
+  <script src="scripts/db.js"></script>
+  <script src="scripts/tour.js"></script>
+  <script>
+    let user = null;
+    let currentTab = 'dashboard';
+
+    document.addEventListener('languagechange', () => {
+      I18N.injectLanguageSwitcher();
+      I18N.applyI18n();
+      render();
+    });
+
+    async function init() {
+      await DB.openDB();
+      await DB.seedDemoData();
+
+      I18N.injectLanguageSwitcher();
+      I18N.applyI18n();
+
+      const session = await DB.currentUser();
+      user = session ? await DB.Users.get(session.email) : null;
+      if (!user || user.role !== 'student') {
+        window.location.href = 'login.html';
+        return;
+      }
+
+      document.getElementById('userName').innerText = user.name;
+      document.getElementById('avatar').innerText = user.name.charAt(0).toUpperCase();
+
+      document.querySelectorAll('.nav-item[data-tab]').forEach(el => {
+        el.addEventListener('click', () => {
+          document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+          el.classList.add('active');
+          currentTab = el.dataset.tab;
+          render();
+        });
+      });
+
+      render();
+    }
+
+    async function render() {
+      const main = document.getElementById('main');
+      main.innerHTML = `<div class="empty"><i class="fas fa-spinner fa-spin"></i>${I18N.t('common.loading')}</div>`;
+
+      if      (currentTab === 'dashboard') main.innerHTML = await renderDashboard();
+      else if (currentTab === 'browse')    main.innerHTML = await renderBrowse();
+      else if (currentTab === 'mycomps')   main.innerHTML = await renderMyComps();
+      else if (currentTab === 'pajsk')     main.innerHTML = await renderPajsk();
+
+      attachHandlers();
+
+      // After the main content is inserted into #main:
+      if (typeof renderTour === 'function') renderTour();
+    }
+
+    async function renderDashboard() {
+      const regs  = await DB.Registrations.byStudent(user.email);
+      const comps = await DB.Competitions.all();
+
+      const ongoing   = regs.filter(r => r.status === 'registered' || r.status === 'ongoing');
+      const completed = regs.filter(r => r.status === 'completed');
+      const pajskData = await DB.calculatePajsk(user.email);
+
+      return `
+        <div class="header">
+          <h1>${I18N.t('student.hello')}, <span>${user.name.split(' ')[0]}</span> 👋</h1>
+        </div>
+
+        <div class="grid-3">
+          <div class="stat"><div class="label">${I18N.t('student.pajsk_total')}</div><div class="value">${pajskData.total.toFixed(1)}</div><div class="sub">${I18N.t('student.pajsk_sub')}</div></div>
+          <div class="stat"><div class="label">${I18N.t('student.joined')}</div><div class="value">${ongoing.length}</div><div class="sub">${I18N.t('student.joined_sub')}</div></div>
+          <div class="stat"><div class="label">${I18N.t('student.completed')}</div><div class="value">${completed.length}</div><div class="sub">${I18N.t('student.completed_sub')}</div></div>
+        </div>
+
+        <div class="card">
+          <h3>${I18N.t('student.ongoing')}</h3>
+          ${ongoing.length === 0 ? emptyState(I18N.t('student.ongoing_empty')) : `
+            <table>
+              <tr><th>${I18N.t('th.competition')}</th><th>${I18N.t('th.level')}</th><th>${I18N.t('th.marks_promise')}</th><th>${I18N.t('th.status')}</th></tr>
+              ${ongoing.map(r => {
+                const c = comps.find(c => c.id === r.competitionId);
+                if (!c) return '';
+                const max = c.participationScore + (c.maxAchievementScore || 0);
+                return `<tr>
+                  <td>${c.name}</td>
+                  <td>${DB.levelLabel(c.level)}</td>
+                  <td>${max} ${I18N.t('student.marks')}</td>
+                  <td><span class="badge badge-warning">${DB.statusLabel(r.status)}</span></td>
+                </tr>`;
+              }).join('')}
+            </table>
+          `}
+        </div>
+
+        <div class="card">
+          <h3>${I18N.t('student.past')}</h3>
+          ${completed.length === 0 ? emptyState(I18N.t('student.past_empty')) : `
+            <table>
+              <tr><th>${I18N.t('th.competition')}</th><th>${I18N.t('th.level')}</th><th>${I18N.t('th.result')}</th><th>${I18N.t('th.marks')}</th></tr>
+              ${completed.map(r => {
+                const c = comps.find(c => c.id === r.competitionId);
+                if (!c) return '';
+                return `<tr>
+                  <td>${c.name}</td>
+                  <td>${DB.levelLabel(c.level)}</td>
+                  <td>${DB.resultLabel(r.result)}</td>
+                  <td><strong>${r.totalPajsk} ${I18N.t('student.marks')}</strong></td>
+                </tr>`;
+              }).join('')}
+            </table>
+          `}
+        </div>
+      `;
+    }
+
+    async function renderBrowse() {
+      const approved      = await DB.Competitions.byStatus('approved');
+      const regs          = await DB.Registrations.byStudent(user.email);
+      const registeredIds = regs.map(r => r.competitionId);
+
+      if (approved.length === 0) {
+        return `<div class="header"><h1>${I18N.t('student.browse_title')}</h1></div>
+                <div class="card">${emptyState(I18N.t('student.browse_empty'))}</div>`;
+      }
+
+      return `
+        <div class="header"><h1>${I18N.t('student.browse_title')}</h1></div>
+        <div class="card">
+          <table>
+            <tr>
+              <th>${I18N.t('th.competition')}</th>
+              <th>${I18N.t('th.level')}</th>
+              <th>${I18N.t('th.category')}</th>
+              <th>${I18N.t('th.date')}</th>
+              <th>${I18N.t('th.marks')}</th>
+              <th></th>
+            </tr>
+            ${approved.map(c => {
+              const isRegistered = registeredIds.includes(c.id);
+              const max = c.participationScore + (c.maxAchievementScore || 0);
+              return `
+                <tr>
+                  <td><strong>${c.name}</strong><br><span class="text-muted" style="font-size:0.8rem;">${c.description || ''}</span></td>
+                  <td>${DB.levelLabel(c.level)}<br><span class="text-muted" style="font-size:0.75rem;">${DB.engagementShort(c.engagementType)}</span></td>
+                  <td>${c.category}</td>
+                  <td>${c.date}</td>
+                  <td><span class="badge badge-info">${c.participationScore}${c.maxAchievementScore ? ' – ' + max : ''}</span></td>
+                  <td>
+                    ${isRegistered
+                      ? `<span class="badge badge-success">${I18N.t('student.registered')}</span>`
+                      : `<button class="btn btn-primary btn-sm" data-register="${c.id}">${I18N.t('student.register')}</button>`}
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </table>
+        </div>
+      `;
+    }
+
+    async function renderMyComps() {
+      const regs  = await DB.Registrations.byStudent(user.email);
+      const comps = await DB.Competitions.all();
+
+      if (regs.length === 0) {
+        return `<div class="header"><h1>${I18N.t('student.my_title')}</h1></div>
+                <div class="card">${emptyState(I18N.t('student.my_empty'))}</div>`;
+      }
+
+      return `
+        <div class="header"><h1>${I18N.t('student.my_title')}</h1></div>
+        <div class="card">
+          <table>
+            <tr>
+              <th>${I18N.t('th.competition')}</th>
+              <th>${I18N.t('th.level')}</th>
+              <th>${I18N.t('th.date')}</th>
+              <th>${I18N.t('th.status')}</th>
+              <th>${I18N.t('th.result')}</th>
+              <th>${I18N.t('th.marks')}</th>
+            </tr>
+            ${regs.map(r => {
+              const c = comps.find(c => c.id === r.competitionId);
+              if (!c) return '';
+              const badge = {
+                registered: 'badge-warning',
+                ongoing:    'badge-info',
+                completed:  'badge-success'
+              }[r.status] || 'badge-secondary';
+              return `
+                <tr>
+                  <td>${c.name}</td>
+                  <td>${DB.levelLabel(c.level)}</td>
+                  <td>${c.date}</td>
+                  <td><span class="badge ${badge}">${DB.statusLabel(r.status)}</span></td>
+                  <td>${r.result ? DB.resultLabel(r.result) : '—'}</td>
+                  <td>${r.totalPajsk ? '<strong>' + r.totalPajsk + '</strong>' : '—'}</td>
+                </tr>
+              `;
+            }).join('')}
+          </table>
+        </div>
+      `;
+    }
+
+    async function renderPajsk() {
+      const marks     = await DB.Marks.byStudent(user.email);
+      const pajskData = await DB.calculatePajsk(user.email);
+
+      return `
+        <div class="header"><h1>${I18N.t('student.pajsk_title')}</h1></div>
+
+        <div class="grid-3">
+          <div class="stat"><div class="label">${I18N.t('student.pajsk_base')}</div><div class="value">${pajskData.base}</div><div class="sub">${I18N.t('student.pajsk_base_sub')}</div></div>
+          <div class="stat"><div class="label">${I18N.t('student.pajsk_comp')}</div><div class="value">${pajskData.fromCompetitions}</div><div class="sub">${I18N.t('student.pajsk_comp_sub')}</div></div>
+          <div class="stat"><div class="label">${I18N.t('student.pajsk_total_lbl')}</div><div class="value">${pajskData.total.toFixed(1)}</div><div class="sub">${I18N.t('student.pajsk_overall')}</div></div>
+        </div>
+
+        <div class="card">
+          <h3>${I18N.t('student.pajsk_breakdown')}</h3>
+          ${marks.length === 0 ? emptyState(I18N.t('student.pajsk_empty')) : `
+            <table>
+              <tr>
+                <th>${I18N.t('th.competition')}</th>
+                <th>${I18N.t('th.level')}</th>
+                <th>${I18N.t('th.result')}</th>
+                <th>${I18N.t('th.participation')}</th>
+                <th>${I18N.t('th.achievement')}</th>
+                <th>${I18N.t('th.total')}</th>
+              </tr>
+              ${marks.map(m => `
+                <tr>
+                  <td>${m.source || m.competitionName || '—'}</td>
+                  <td>${m.level ? DB.levelLabel(m.level) : '—'}</td>
+                  <td>${m.result ? DB.resultLabel(m.result) : '—'}</td>
+                  <td>${m.participationScore ?? m.marks}</td>
+                  <td>${m.achievementScore ?? 0}</td>
+                  <td><strong>${m.marks}</strong></td>
+                  <td>
+                    ${m.source || m.competitionName || '—'}
+                    ${m.type === 'manual' ? `<span class="badge badge-info" style="margin-left:6px;font-size:0.7rem;">MANUAL</span>` : ''}
+                  </td>
+                </tr>
+              `).join('')}
+            </table>
+          `}
+        </div>
+      `;
+    }
+
+    function attachHandlers() {
+      document.querySelectorAll('[data-register]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const compId = parseInt(btn.dataset.register, 10);
+          await DB.Registrations.add({
+            studentEmail: user.email,
+            competitionId: compId,
+            status: 'registered',
+            registeredAt: Date.now(),
+            result: null,
+            participationScore: 0,
+            achievementScore: 0,
+            totalPajsk: 0
+          });
+          showToast(I18N.t('student.registered_toast'), 'check-circle');
+          render();
+        });
+      });
+    }
+
+    function emptyState(msg) {
+      return `<div class="empty"><i class="fas fa-inbox"></i>${msg}</div>`;
+    }
+
+    function showToast(msg, icon = 'check-circle') {
+      const tEl = document.getElementById('toast');
+      document.getElementById('toastMsg').innerText = msg;
+      tEl.querySelector('i').className = `fas fa-${icon}`;
+      tEl.classList.add('show');
+      setTimeout(() => tEl.classList.remove('show'), 2200);
+    }
+
+    init();
+  </script>
+</body>
+</html>

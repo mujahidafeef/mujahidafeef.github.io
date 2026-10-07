@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>EduMinat · Parent</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="logo"><i class="fas fa-rocket"></i> <span>EduMinat</span></div>
+      <div class="user-card">
+        <div class="avatar" id="avatar">P</div>
+        <div class="info">
+          <strong id="userName">Loading...</strong>
+          <span data-i18n="role.parent"></span>
+        </div>
+      </div>
+      <nav class="nav">
+        <div class="nav-item active"><i class="fas fa-chart-line"></i> <span data-i18n="nav.child"></span></div>
+        <div class="nav-item" onclick="DB.resetDemo()"><i class="fas fa-rotate-left"></i> <span data-i18n="nav.reset"></span></div>
+        <div class="nav-item logout" onclick="DB.logout()"><i class="fas fa-sign-out-alt"></i> <span data-i18n="nav.logout"></span></div>
+      </nav>
+    </aside>
+    <main class="main" id="main"></main>
+  </div>
+
+  <div id="tourBanner" class="tour-banner hidden">
+    <div class="tour-content">
+      <div class="tour-icon"><i class="fas fa-graduation-cap"></i></div>
+      <div class="tour-text">
+        <strong id="tourTitle"></strong>
+        <p id="tourBody"></p>
+        <ol id="tourSteps"></ol>
+      </div>
+      <button class="tour-dismiss" onclick="dismissTour()">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="dismissTour()" id="tourDismissBtn"></button>
+  </div>
+
+  <script src="scripts/i18n.js"></script>
+  <script src="scripts/db.js"></script>
+  <script src="scripts/tour.js"></script>
+  <script>
+    let user = null;
+
+    document.addEventListener('languagechange', () => {
+      I18N.injectLanguageSwitcher();
+      I18N.applyI18n();
+      render();
+    });
+
+    async function init() {
+      await DB.openDB();
+      await DB.seedDemoData();
+
+      I18N.injectLanguageSwitcher();
+      I18N.applyI18n();
+
+      const session = await DB.currentUser();
+      user = session ? await DB.Users.get(session.email) : null;
+      if (!user || user.role !== 'parent') {
+        window.location.href = 'login.html';
+        return;
+      }
+      document.getElementById('userName').innerText = user.name;
+      document.getElementById('avatar').innerText = user.name.charAt(0).toUpperCase();
+      render();
+    }
+
+    async function render() {
+
+      // Support both old (childEmail) and new (childEmails[]) formats
+      let childEmails = user.childEmails;
+      if (!childEmails && user.childEmail) childEmails = [user.childEmail];
+      if (!childEmails || childEmails.length === 0) {
+        document.getElementById('main').innerHTML =
+          `<div class="header"><h1>${I18N.t('nav.child')}</h1></div>
+         <div class="card"><div class="empty"><i class="fas fa-user-slash"></i>${I18N.t('parent.no_child')}</div></div>`;
+        return;
+      }
+
+      const children = [];
+      for (const email of childEmails) {
+        const child = await DB.Users.get(email);
+        if (!child) continue;
+        const pajskData = await DB.calculatePajsk(child.email);
+        const regs = await DB.Registrations.byStudent(child.email);
+        children.push({
+          child,
+          pajskData,
+          regs
+        });
+      }
+
+      const comps = await DB.Competitions.all();
+
+      const cardsHTML = children.map(({
+        child,
+        pajskData,
+        regs
+      }) => `
+          <div class="card">
+            <div class="flex-between" style="margin-bottom:1rem;">
+              <div>
+                <h3 style="margin-bottom:0.2rem;">${child.name}</h3>
+                <span class="text-muted">${child.class || '—'}</span>
+              </div>
+              <div style="text-align:right;">
+                <div class="text-muted" style="font-size:0.8rem;">${I18N.t('parent.pajsk')}</div>
+                <div style="font-size:1.8rem;font-weight:700;color:var(--primary);">
+                  ${pajskData.total.toFixed(1)}
+                </div>
+              </div>
+            </div>
+
+            ${regs.length === 0
+              ? `<div class="empty"><i class="fas fa-inbox"></i>${I18N.t('parent.no_activity')}</div>`
+              : `<table>
+                  <tr>
+                    <th>${I18N.t('th.competition')}</th>
+                    <th>${I18N.t('th.result')}</th>
+                    <th>${I18N.t('th.marks')}</th>
+                  </tr>
+                  ${regs.map(r => {
+                    const c = comps.find(c => c.id === r.competitionId);
+                    return `<tr>
+                      <td>${c?.name || '—'}</td>
+                      <td>${r.result ? DB.resultLabel(r.result) : DB.statusLabel(r.status)}</td>
+                      <td>${r.totalPajsk || 0}</td>
+                    </tr>`;
+                  }).join('')}
+                </table>`}
+          </div>
+        `).join(''); 
+
+      // Summary at the top
+      const totalPajsk = children.reduce((sum, c) => sum + c.pajskData.total, 0);
+      const totalComps = children.reduce((sum, c) => sum + c.regs.length, 0);
+
+      document.getElementById('main').innerHTML = `
+        <div class="header">
+          <h1>${I18N.t('nav.child')} <span>· ${user.name}</span></h1>
+        </div>
+
+        <div class="grid-3">
+          <div class="stat">
+            <div class="label">${I18N.t('parent.children')}</div>
+            <div class="value">${children.length}</div>
+          </div>
+          <div class="stat">
+            <div class="label">${I18N.t('parent.total_pajsk')}</div>
+            <div class="value">${totalPajsk.toFixed(1)}</div>
+          </div>
+          <div class="stat">
+            <div class="label">${I18N.t('parent.total_activities')}</div>
+            <div class="value">${totalComps}</div>
+          </div>
+        </div>
+
+        ${cardsHTML}
+      `;
+
+
+      // After the main content is inserted into #main:
+      if (typeof renderTour === 'function') renderTour();
+    }
+
+    init();
+  </script>
+</body>
+
+</html>

@@ -1,0 +1,1404 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>EduMinat · Teacher</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="logo"><i class="fas fa-rocket"></i> <span>EduMinat</span></div>
+      <div class="user-card">
+        <div class="avatar" id="avatar">T</div>
+        <div class="info">
+          <strong id="userName">Loading...</strong>
+          <span data-i18n="role.teacher"></span>
+        </div>
+      </div>
+      <nav class="nav">
+        <div class="nav-item active" data-tab="class"><i class="fas fa-users"></i> <span data-i18n="nav.class"></span></div>
+        <div class="nav-item" data-tab="analytics"><i class="fas fa-chart-bar"></i> <span data-i18n="nav.teacher_analytics"></span></div>
+        <div class="nav-item" onclick="openManualMarkModal()"><i class="fas fa-plus-circle"></i> <span data-i18n="nav.manual_mark"></span></div>
+        <div class="nav-item" onclick="openBulkImportModal()"><i class="fas fa-file-import"></i> <span data-i18n="nav.bulk_import"></span></div>
+        <div class="nav-item" onclick="DB.resetDemo()"><i class="fas fa-rotate-left"></i> <span data-i18n="nav.reset"></span></div>
+        <div class="nav-item logout" onclick="DB.logout()"><i class="fas fa-sign-out-alt"></i> <span data-i18n="nav.logout"></span></div>
+      </nav>
+    </aside>
+    <main class="main" id="main"></main>
+  </div>
+  <div class="toast" id="toast"><i class="fas fa-check-circle"></i><span id="toastMsg"></span></div>
+
+  <div id="tourBanner" class="tour-banner hidden">
+    <div class="tour-content">
+      <div class="tour-icon"><i class="fas fa-graduation-cap"></i></div>
+      <div class="tour-text">
+        <strong id="tourTitle"></strong>
+        <p id="tourBody"></p>
+        <ol id="tourSteps"></ol>
+      </div>
+      <button class="tour-dismiss" onclick="dismissTour()">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="dismissTour()" id="tourDismissBtn"></button>
+  </div>
+
+  <script src="scripts/chart.umd.min.js"></script>
+  <script src="scripts/xlsx.full.min.js"></script>
+  <script src="scripts/i18n.js"></script>
+  <script src="scripts/tour.js"></script>
+  <script src="scripts/db.js"></script>
+  <script>
+    let user = null;
+    let currentTab = 'class';
+    let selectedClass = 'all'; // 'all' | '5 Alpha' | '4 Beta' | ...
+
+    document.addEventListener('languagechange', () => {
+      I18N.injectLanguageSwitcher();
+      I18N.applyI18n();
+      render();
+    });
+
+    // ============================================================
+    //  MANUAL PAJSK MODAL
+    // ============================================================
+    async function openManualMarkModal(prefillStudentEmail = null) {
+      // Remove any existing modal
+      document.getElementById('manualMarkModal')?.remove();
+
+      const students = await DB.Users.byRole('student');
+      // Sort by class then name
+      students.sort((a, b) => {
+        const c = (a.class || '').localeCompare(b.class || '');
+        return c !== 0 ? c : a.name.localeCompare(b.name);
+      });
+
+      // Group students by class for a nicer dropdown
+      const byClass = {};
+      for (const s of students) {
+        const cls = s.class || '—';
+        if (!byClass[cls]) byClass[cls] = [];
+        byClass[cls].push(s);
+      }
+
+      const levels = ['antarabangsa', 'kebangsaan', 'negeri', 'bahagian', 'zon_daerah'];
+      const results = ['johan', 'naib_johan', 'ketiga', 'keempat', 'kelima', 'penyertaan'];
+
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-backdrop show';
+      overlay.id = 'manualMarkModal';
+      overlay.innerHTML = `
+        <div class="modal" style="max-width:640px;">
+          <div class="modal-header">
+            <div>
+              <h3>${I18N.t('manual.title')}</h3>
+              <p class="sub">${I18N.t('manual.subtitle')}</p>
+            </div>
+            <button class="modal-close" onclick="document.getElementById('manualMarkModal').remove()">✕</button>
+          </div>
+
+          <div class="modal-body">
+            <div class="form-group">
+              <label>${I18N.t('manual.student')}</label>
+              <select id="mmStudent" style="padding-left:1rem;">
+                <option value="">${I18N.t('manual.select_student')}</option>
+                ${Object.entries(byClass).map(([cls, list]) => `
+                  <optgroup label="${cls}">
+                    ${list.map(s => `
+                      <option value="${s.email}" ${prefillStudentEmail === s.email ? 'selected' : ''}>
+                        ${s.name}
+                      </option>
+                    `).join('')}
+                  </optgroup>
+                `).join('')}
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label>${I18N.t('manual.competition')}</label>
+              <input type="text" id="mmName" placeholder="${I18N.t('manual.competition_ph')}" style="padding-left:1rem;">
+            </div>
+
+            <div class="grid-2">
+              <div class="form-group">
+                <label>${I18N.t('manual.level')}</label>
+                <select id="mmLevel" style="padding-left:1rem;">
+                  ${levels.map(lvl => `
+                    <option value="${lvl}" ${lvl === 'kebangsaan' ? 'selected' : ''}>
+                      ${DB.levelLabel(lvl)}
+                    </option>
+                  `).join('')}
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label>${I18N.t('manual.engagement')}</label>
+                <select id="mmEngagement" style="padding-left:1rem;">
+                  <option value="1" selected>${I18N.t('eng.1')}</option>
+                  <option value="2">${I18N.t('eng.2')}</option>
+                  <option value="3">${I18N.t('eng.3')}</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>${I18N.t('manual.result')}</label>
+              <select id="mmResult" style="padding-left:1rem;">
+                ${results.map(r => `
+                  <option value="${r}" ${r === 'penyertaan' ? 'selected' : ''}>
+                    ${DB.resultLabel(r)}
+                  </option>
+                `).join('')}
+              </select>
+            </div>
+
+            <div class="card" style="background:var(--primary-light);border:none;margin:1rem 0 0;padding:1rem 1.2rem;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem;">
+                <span style="font-weight:600;color:var(--primary);">${I18N.t('manual.score_preview')}:</span>
+                <strong id="mmTotal" style="font-size:1.6rem;color:var(--primary);">17</strong>
+              </div>
+              <div style="display:flex;gap:1.5rem;font-size:0.85rem;color:var(--text-muted);">
+                <span>${I18N.t('manual.participation_part')}: <strong id="mmPart">17</strong></span>
+                <span>${I18N.t('manual.achievement_part')}: <strong id="mmAch">0</strong></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button class="btn btn-outline" onclick="document.getElementById('manualMarkModal').remove()">
+              ${I18N.t('common.cancel')}
+            </button>
+            <button class="btn btn-primary" id="mmSaveBtn">
+              <i class="fas fa-save"></i> ${I18N.t('manual.save')}
+            </button>
+          </div>
+        </div>
+      `;
+
+      // Close on backdrop click
+      overlay.addEventListener('click', (e) => {
+        if (e.target.id === 'manualMarkModal') overlay.remove();
+      });
+
+      // Close on Escape
+      const escHandler = (e) => {
+        if (e.key === 'Escape') {
+          overlay.remove();
+          document.removeEventListener('keydown', escHandler);
+        }
+      };
+      document.addEventListener('keydown', escHandler);
+
+      document.body.appendChild(overlay);
+
+      // Live preview + save
+      const levelSel = document.getElementById('mmLevel');
+      const engSel = document.getElementById('mmEngagement');
+      const resultSel = document.getElementById('mmResult');
+
+      const updatePreview = () => {
+        const lvl = levelSel.value;
+        const eng = parseInt(engSel.value, 10);
+        const res = resultSel.value;
+
+        const part = DB.getParticipationScore(lvl, eng);
+        const ach = DB.getAchievementScore(lvl, res);
+        const total = part + ach;
+
+        document.getElementById('mmPart').innerText = part;
+        document.getElementById('mmAch').innerText = ach;
+        document.getElementById('mmTotal').innerText = total;
+      };
+
+      levelSel.addEventListener('change', updatePreview);
+      engSel.addEventListener('change', updatePreview);
+      resultSel.addEventListener('change', updatePreview);
+      updatePreview();
+
+      // Save handler
+      document.getElementById('mmSaveBtn').addEventListener('click', async () => {
+        const studentEmail = document.getElementById('mmStudent').value;
+        const competitionName = document.getElementById('mmName').value.trim();
+        const level = levelSel.value;
+        const engagementType = parseInt(engSel.value, 10);
+        const result = resultSel.value;
+
+        // Validation
+        if (!studentEmail) {
+          showToast(I18N.t('manual.error_student'), 'exclamation-circle');
+          return;
+        }
+        if (!competitionName) {
+          showToast(I18N.t('manual.error_name'), 'exclamation-circle');
+          return;
+        }
+        if (!result) {
+          showToast(I18N.t('manual.error_result'), 'exclamation-circle');
+          return;
+        }
+
+        const saved = await DB.addManualMark({
+          studentEmail,
+          competitionName,
+          level,
+          engagementType,
+          result,
+          awardedBy: user.email
+        });
+
+        overlay.remove();
+        showToast(I18N.t('manual.saved', {
+          marks: saved.marks
+        }), 'check-circle');
+        render(); // refresh the class list
+      });
+    }
+
+    // ============================================================
+    //  BULK IMPORT — LAUNCHER MODAL
+    // ============================================================
+    async function openBulkImportModal() {
+      document.getElementById('bulkImportModal')?.remove();
+
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-backdrop show';
+      overlay.id = 'bulkImportModal';
+      overlay.innerHTML = `
+        <div class="modal" style="max-width:680px;">
+          <div class="modal-header">
+            <div>
+              <h3>${I18N.t('bulk.title')}</h3>
+              <p class="sub">${I18N.t('bulk.subtitle')}</p>
+            </div>
+            <button class="modal-close" onclick="document.getElementById('bulkImportModal').remove()">✕</button>
+          </div>
+
+          <div class="modal-body">
+            <div class="card" style="background:#fafaff;border:1px dashed #d0d0e0;padding:1rem 1.2rem;margin-bottom:1.2rem;">
+              <strong style="font-size:0.95rem;">
+                <i class="fas fa-info-circle"></i> ${I18N.t('bulk.instructions_title')}
+              </strong>
+              <div style="font-size:0.88rem;color:var(--text-muted);margin-top:0.5rem;line-height:1.7;">
+                ${I18N.t('bulk.instruction_1')}<br>
+                ${I18N.t('bulk.instruction_2')}<br>
+                ${I18N.t('bulk.instruction_3')}<br>
+                ${I18N.t('bulk.instruction_4')}
+              </div>
+            </div>
+
+            <div style="margin-bottom:1.2rem;">
+              <h4 style="font-size:0.9rem;margin-bottom:0.5rem;">${I18N.t('bulk.valid_levels')}</h4>
+              <div class="flex">
+                ${['antarabangsa','kebangsaan','negeri','bahagian','zon_daerah'].map(l => `
+                  <span class="badge badge-info">${DB.levelLabel(l)}</span>
+                `).join('')}
+              </div>
+            </div>
+
+            <div style="margin-bottom:1.2rem;">
+              <h4 style="font-size:0.9rem;margin-bottom:0.5rem;">${I18N.t('bulk.valid_results')}</h4>
+              <div class="flex">
+                ${['johan','naib_johan','ketiga','keempat','kelima','penyertaan'].map(r => `
+                  <span class="badge badge-success">${DB.resultLabel(r)}</span>
+                `).join('')}
+              </div>
+            </div>
+
+            <div style="display:flex;gap:0.8rem;flex-wrap:wrap;">
+              <button class="btn btn-outline" id="bulkDownloadBtn">
+                <i class="fas fa-file-excel"></i> ${I18N.t('bulk.download_template')}
+              </button>
+              <button class="btn btn-primary" id="bulkUploadBtn">
+                <i class="fas fa-file-upload"></i> ${I18N.t('bulk.upload_file')}
+              </button>
+            </div>
+
+            <input type="file" id="bulkFileInput" accept=".xlsx,.xls" style="display:none;">
+          </div>
+
+          <div class="modal-footer">
+            <button class="btn btn-outline" onclick="document.getElementById('bulkImportModal').remove()">
+              ${I18N.t('common.close')}
+            </button>
+          </div>
+        </div>
+      `;
+
+      overlay.addEventListener('click', (e) => {
+        if (e.target.id === 'bulkImportModal') overlay.remove();
+      });
+      document.addEventListener('keydown', function escHandler(e) {
+        if (e.key === 'Escape') {
+          overlay.remove();
+          document.removeEventListener('keydown', escHandler);
+        }
+      });
+
+      document.body.appendChild(overlay);
+
+      // Wire buttons
+      document.getElementById('bulkDownloadBtn').addEventListener('click', downloadBulkTemplate);
+      document.getElementById('bulkUploadBtn').addEventListener('click', () => {
+        const input = document.getElementById('bulkFileInput');
+        input.value = '';
+        input.onchange = (e) => {
+          const file = e.target.files[0];
+          if (file) {
+            document.getElementById('bulkImportModal')?.remove();
+            parseBulkFile(file);
+          }
+        };
+        input.click();
+      });
+    }
+
+    // ============================================================
+    // BULK IMPORT — DOWNLOAD TEMPLATE
+    // ============================================================
+    async function downloadBulkTemplate() {
+      try {
+        const students = await DB.Users.byRole('student');
+        students.sort((a, b) => {
+          const c = (a.class || '').localeCompare(b.class || '');
+          return c !== 0 ? c : a.name.localeCompare(b.name);
+        });
+
+        // Sheet 1 — one row per student with blank input columns
+        const rows = students.map(s => ({
+          'StudentEmail': s.email,
+          'StudentName': s.name,
+          'Class': s.class || '',
+          'CompetitionName': '',
+          'Level': '',
+          'Engagement': '',
+          'Result': ''
+        }));
+
+        const ws = XLSX.utils.json_to_sheet(rows);
+        ws['!cols'] = [{
+            wch: 28
+          }, // StudentEmail
+          {
+            wch: 24
+          }, // StudentName
+          {
+            wch: 12
+          }, // Class
+          {
+            wch: 32
+          }, // CompetitionName
+          {
+            wch: 18
+          }, // Level
+          {
+            wch: 14
+          }, // Engagement
+          {
+            wch: 18
+          } // Result
+        ];
+
+        // Sheet 2 — instructions with valid values
+        const isEN = I18N.getLanguage() === 'en';
+        const instructions = isEN ? [
+          ['BULK PAJSK IMPORT — INSTRUCTIONS'],
+          [''],
+          ['Fill in these 4 columns for each row where a student has a mark:'],
+          ['CompetitionName', 'Free text, e.g. "School Science Fair 2026"'],
+          ['Level', 'One of: ' + ['antarabangsa', 'kebangsaan', 'negeri', 'bahagian', 'zon_daerah'].map(l => DB.levelLabel(l)).join(', ')],
+          ['Engagement', 'One of: 1, 2, 3 (see definitions below)'],
+          ['Result', 'One of: ' + ['johan', 'naib_johan', 'ketiga', 'keempat', 'kelima', 'penyertaan'].map(r => DB.resultLabel(r)).join(', ')],
+          [''],
+          ['Engagement types:'],
+          ['1', 'Type I — Ranked competition'],
+          ['2', 'Type II — Non-ranked / committee'],
+          ['3', 'Type III — Online with no live interaction / spectator'],
+          [''],
+          ['Notes:'],
+          ['- StudentEmail, StudentName, Class are pre-filled — do not change.'],
+          ['- Leave rows blank if that student has no mark to add.'],
+          ['- Save as .xlsx and upload back into EduMinat.']
+        ] : [
+          ['IMPORT PUKAL PAJSK — PANDUAN'],
+          [''],
+          ['Isi 4 kolum ini untuk setiap baris yang mempunyai mata:'],
+          ['CompetitionName', 'Teks bebas, cth. "Pesta Sains Sekolah 2026"'],
+          ['Level', 'Salah satu: ' + ['antarabangsa', 'kebangsaan', 'negeri', 'bahagian', 'zon_daerah'].map(l => DB.levelLabel(l)).join(', ')],
+          ['Engagement', 'Salah satu: 1, 2, 3 (lihat definisi di bawah)'],
+          ['Result', 'Salah satu: ' + ['johan', 'naib_johan', 'ketiga', 'keempat', 'kelima', 'penyertaan'].map(r => DB.resultLabel(r)).join(', ')],
+          [''],
+          ['Jenis Penglibatan:'],
+          ['1', 'Penglibatan I — Pertandingan berperingkat'],
+          ['2', 'Penglibatan II — Tanpa pemeringkatan / jawatankuasa'],
+          ['3', 'Penglibatan III — Dalam talian tanpa interaksi langsung / penonton'],
+          [''],
+          ['Nota:'],
+          ['- StudentEmail, StudentName, Class telah diisi — jangan ubah.'],
+          ['- Biarkan baris kosong jika tiada mata untuk pelajar tersebut.'],
+          ['- Simpan sebagai .xlsx dan muat naik semula ke EduMinat.']
+        ];
+
+        const wsInfo = XLSX.utils.aoa_to_sheet(instructions);
+        wsInfo['!cols'] = [{
+          wch: 24
+        }, {
+          wch: 70
+        }];
+
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Students');
+        XLSX.utils.book_append_sheet(wb, wsInfo, 'Instructions');
+
+        const dateStr = new Date().toISOString().slice(0, 10);
+        XLSX.writeFile(wb, `PAJSK_Bulk_Import_${dateStr}.xlsx`);
+
+        showToast(I18N.t('bulk.template_downloaded'), 'file-excel');
+      } catch (err) {
+        console.error(err);
+        showToast(I18N.t('bulk.template_failed'), 'exclamation-circle');
+      }
+    }
+
+    // ============================================================
+    //  BULK IMPORT — PARSE FILE INTO PROPOSALS
+    // ============================================================
+    async function parseBulkFile(file) {
+      try {
+        showToast(I18N.t('bulk.reading'), 'spinner');
+
+        const buffer = await file.arrayBuffer();
+        const wb = XLSX.read(buffer, {
+          type: 'array'
+        });
+        const sheetName = wb.SheetNames.includes('Students') ? 'Students' : wb.SheetNames[0];
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {
+          defval: ''
+        });
+
+        if (rows.length === 0) {
+          showToast(I18N.t('bulk.no_file'), 'exclamation-circle');
+          return;
+        }
+
+        // -------- Build lookup maps for Level / Engagement / Result --------
+        const levelMap = {};
+        ['antarabangsa', 'kebangsaan', 'negeri', 'bahagian', 'zon_daerah'].forEach(k => {
+          levelMap[k.toLowerCase()] = k;
+          levelMap[DB.levelLabel(k).toLowerCase()] = k;
+        });
+
+        const resultMap = {};
+        ['johan', 'naib_johan', 'ketiga', 'keempat', 'kelima', 'penyertaan'].forEach(k => {
+          resultMap[k.toLowerCase()] = k;
+          resultMap[DB.resultLabel(k).toLowerCase()] = k;
+        });
+        // Common aliases
+        Object.assign(resultMap, {
+          '1st': 'johan',
+          'first': 'johan',
+          '2nd': 'naib_johan',
+          'second': 'naib_johan',
+          'naib johan': 'naib_johan',
+          '3rd': 'ketiga',
+          'third': 'ketiga',
+          '4th': 'keempat',
+          'fourth': 'keempat',
+          '5th': 'kelima',
+          'fifth': 'kelima',
+          'participation': 'penyertaan',
+          'peserta': 'penyertaan',
+          'type i': '1',
+          'type ii': '2',
+          'type iii': '3',
+          'jenis i': '1',
+          'jenis ii': '2',
+          'jenis iii': '3'
+        });
+
+        const engagementMap = {
+          '1': 1,
+          '2': 2,
+          '3': 3,
+          'type 1': 1,
+          'type 2': 2,
+          'type 3': 3,
+          'type i': 1,
+          'type ii': 2,
+          'type iii': 3,
+          'jenis 1': 1,
+          'jenis 2': 2,
+          'jenis 3': 3,
+          'jenis i': 1,
+          'jenis ii': 2,
+          'jenis iii': 3
+        };
+
+        const students = await DB.Users.all();
+        const studentMap = Object.fromEntries(students.map(s => [s.email, s]));
+
+        const proposals = [];
+
+        for (let i = 0; i < rows.length; i++) {
+          const row = rows[i];
+          const rowNum = i + 2;
+
+          const email = String(row['StudentEmail'] || '').trim().toLowerCase();
+          const compName = String(row['CompetitionName'] || '').trim();
+          const rawLevel = String(row['Level'] || '').trim();
+          const rawEng = String(row['Engagement'] || '').trim();
+          const rawResult = String(row['Result'] || '').trim();
+
+          // -------- Skip completely blank rows --------
+          if (!compName && !rawLevel && !rawEng && !rawResult) {
+            proposals.push({
+              rowNum,
+              kind: 'skip',
+              studentName: row['StudentName'] || email,
+              studentEmail: email
+            });
+            continue;
+          }
+
+          // -------- Validate student --------
+          const student = studentMap[email];
+          if (!student) {
+            proposals.push({
+              rowNum,
+              kind: 'error',
+              studentName: row['StudentName'] || email,
+              studentEmail: email,
+              message: `Email "${email}" not found`
+            });
+            continue;
+          }
+
+          // -------- Validate competition name --------
+          if (!compName) {
+            proposals.push({
+              rowNum,
+              kind: 'error',
+              studentName: student.name,
+              studentEmail: email,
+              message: 'CompetitionName is required'
+            });
+            continue;
+          }
+
+          // -------- Validate level --------
+          const levelKey = levelMap[rawLevel.toLowerCase()];
+          if (!levelKey) {
+            proposals.push({
+              rowNum,
+              kind: 'error',
+              studentName: student.name,
+              studentEmail: email,
+              message: `Level "${rawLevel}" invalid`
+            });
+            continue;
+          }
+
+          // -------- Validate engagement --------
+          const engKey = engagementMap[rawEng.toLowerCase()];
+          if (!engKey) {
+            proposals.push({
+              rowNum,
+              kind: 'error',
+              studentName: student.name,
+              studentEmail: email,
+              message: `Engagement "${rawEng}" invalid`
+            });
+            continue;
+          }
+
+          // -------- Validate result --------
+          const resultKey = resultMap[rawResult.toLowerCase()];
+          if (!resultKey) {
+            proposals.push({
+              rowNum,
+              kind: 'error',
+              studentName: student.name,
+              studentEmail: email,
+              message: `Result "${rawResult}" invalid`
+            });
+            continue;
+          }
+
+          // -------- Compute scores --------
+          const part = DB.getParticipationScore(levelKey, engKey);
+          const ach = DB.getAchievementScore(levelKey, resultKey);
+          const total = part + ach;
+
+          proposals.push({
+            rowNum,
+            kind: 'new',
+            studentName: student.name,
+            studentEmail: email,
+            competitionName: compName,
+            level: levelKey,
+            engagementType: engKey,
+            result: resultKey,
+            participationScore: part,
+            achievementScore: ach,
+            totalPajsk: total
+          });
+        }
+
+        // Show preview modal
+        showBulkPreview(proposals);
+      } catch (err) {
+        console.error(err);
+        showToast(err.message || I18N.t('bulk.failed'), 'exclamation-circle');
+      }
+    }
+
+    // ============================================================
+    //  BULK IMPORT — PREVIEW MODAL
+    // ============================================================
+    function showBulkPreview(proposals) {
+      document.getElementById('bulkPreviewModal')?.remove();
+
+      const counts = {
+        new: proposals.filter(p => p.kind === 'new').length,
+        error: proposals.filter(p => p.kind === 'error').length,
+        skip: proposals.filter(p => p.kind === 'skip').length
+      };
+
+      window.__bulkProposals = proposals;
+
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-backdrop show';
+      overlay.id = 'bulkPreviewModal';
+      overlay.innerHTML = `
+        <div class="modal" style="max-width:900px;">
+          <div class="modal-header">
+            <div>
+              <h3>${I18N.t('bulk.preview_title')}</h3>
+              <p class="sub">${I18N.t('bulk.preview_sub')} · ${proposals.length} ${I18N.t('bulk.row')}</p>
+            </div>
+            <button class="modal-close" onclick="document.getElementById('bulkPreviewModal').remove()">✕</button>
+          </div>
+
+          <div class="modal-body">
+            <div class="summary-chips">
+              ${counts.new   ? `<div class="chip chip-success"><i class="fas fa-plus"></i> ${I18N.t('bulk.chip_new',   { n: counts.new })}</div>`   : ''}
+              ${counts.error ? `<div class="chip chip-danger"><i class="fas fa-exclamation-triangle"></i> ${I18N.t('bulk.chip_error', { n: counts.error })}</div>` : ''}
+              ${counts.skip  ? `<div class="chip chip-muted"><i class="fas fa-minus"></i> ${I18N.t('bulk.chip_skip',  { n: counts.skip })}</div>`  : ''}
+            </div>
+
+            <table class="modal-table">
+              <thead>
+                <tr>
+                  <th style="width:5%;">#</th>
+                  <th style="width:22%;">${I18N.t('th.student')}</th>
+                  <th style="width:26%;">${I18N.t('th.competition')}</th>
+                  <th style="width:15%;">${I18N.t('th.level')}</th>
+                  <th style="width:14%;">${I18N.t('th.result')}</th>
+                  <th style="width:18%;text-align:right;">${I18N.t('th.marks')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${proposals.map(p => renderBulkRow(p)).join('')}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="modal-footer">
+            <button class="btn btn-outline" onclick="document.getElementById('bulkPreviewModal').remove()">
+              ${I18N.t('common.cancel')}
+            </button>
+            <button class="btn btn-primary" id="bulkConfirmBtn" ${counts.new === 0 ? 'disabled' : ''}>
+              <i class="fas fa-check"></i>
+              ${counts.new > 0 ? I18N.t('bulk.apply_n', { n: counts.new }) : I18N.t('bulk.nothing')}
+            </button>
+          </div>
+        </div>
+      `;
+
+      overlay.addEventListener('click', (e) => {
+        if (e.target.id === 'bulkPreviewModal') overlay.remove();
+      });
+
+      document.body.appendChild(overlay);
+
+      document.getElementById('bulkConfirmBtn').addEventListener('click', commitBulkImport);
+    }
+
+    function renderBulkRow(p) {
+      if (p.kind === 'skip') {
+        return `<tr class="row-unchanged">
+          <td>${p.rowNum}</td>
+          <td>${p.studentName}</td>
+          <td colspan="3" class="text-muted">—</td>
+          <td style="text-align:right;" class="text-muted">—</td>
+        </tr>`;
+      }
+      if (p.kind === 'error') {
+        return `<tr class="row-error">
+          <td>${p.rowNum}</td>
+          <td>${p.studentName}</td>
+          <td colspan="3"><span class="error-msg-inline"><i class="fas fa-exclamation-circle"></i>${p.message}</span></td>
+          <td style="text-align:right;">—</td>
+        </tr>`;
+      }
+      return `<tr class="row-new">
+        <td>${p.rowNum}</td>
+        <td><strong>${p.studentName}</strong></td>
+        <td>${p.competitionName}</td>
+        <td>${DB.levelLabel(p.level)}</td>
+        <td>${DB.resultLabel(p.result)}</td>
+        <td style="text-align:right;">
+          <strong style="color:var(--primary);">+${p.totalPajsk}</strong>
+        </td>
+      </tr>`;
+    }
+
+    // ============================================================
+    // BULK IMPORT — COMMIT
+    // ============================================================
+    async function commitBulkImport() {
+      const proposals = window.__bulkProposals || [];
+      const toApply = proposals.filter(p => p.kind === 'new');
+
+      if (toApply.length === 0) {
+        document.getElementById('bulkPreviewModal')?.remove();
+        return;
+      }
+
+      try {
+        for (const p of toApply) {
+          await DB.addManualMark({
+            studentEmail: p.studentEmail,
+            competitionName: p.competitionName,
+            level: p.level,
+            engagementType: p.engagementType,
+            result: p.result,
+            awardedBy: user.email
+          });
+        }
+
+        document.getElementById('bulkPreviewModal')?.remove();
+        window.__bulkProposals = null;
+        showToast(I18N.t('bulk.saved', {
+          n: toApply.length
+        }), 'check-circle');
+        render();
+      } catch (err) {
+        console.error(err);
+        showToast(I18N.t('bulk.failed'), 'exclamation-circle');
+      }
+    }
+
+    async function init() {
+      await DB.openDB();
+      await DB.seedDemoData();
+
+      I18N.injectLanguageSwitcher();
+      I18N.applyI18n();
+
+      user = await DB.currentUser();
+      if (!user || user.role !== 'teacher') {
+        window.location.href = 'login.html';
+        return;
+      }
+
+      document.getElementById('userName').innerText = user.name;
+      document.getElementById('avatar').innerText = user.name.charAt(0).toUpperCase();
+
+      document.querySelectorAll('.nav-item[data-tab]').forEach(el => {
+        el.addEventListener('click', () => {
+          document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+          el.classList.add('active');
+          currentTab = el.dataset.tab;
+          render();
+        });
+      });
+
+      render();
+    }
+
+    // ============================================================
+    //  ROUTER
+    // ============================================================
+    async function render() {
+      const main = document.getElementById('main');
+      main.innerHTML = `<div class="empty"><i class="fas fa-spinner fa-spin"></i>${I18N.t('common.loading')}</div>`;
+
+      if (currentTab === 'class') main.innerHTML = await renderClass();
+      else if (currentTab === 'analytics') main.innerHTML = await renderAnalytics();
+
+      attachHandlers();
+      // After the main content is inserted into #main:
+      if (typeof renderTour === 'function') renderTour();
+    }
+
+    // ============================================================
+    //  MAIN VIEW — grouped by class
+    // ============================================================
+    async function renderClass() {
+      const allStudents = await DB.Users.byRole('student');
+
+      // Collect all unique classes
+      const allClasses = [...new Set(allStudents.map(s => s.class).filter(Boolean))].sort();
+
+      // Apply filter
+      const students = selectedClass === 'all' ?
+        allStudents :
+        allStudents.filter(s => s.class === selectedClass);
+
+      // Compute PAJSK for each student
+      const rows = [];
+      for (const s of students) {
+        const p = await DB.calculatePajsk(s.email);
+        const regs = await DB.Registrations.byStudent(s.email);
+        const active = regs.filter(r => r.status === 'registered' || r.status === 'ongoing').length;
+        const completed = regs.filter(r => r.status === 'completed').length;
+        rows.push({
+          student: s,
+          pajsk: p.total,
+          active,
+          completed
+        });
+      }
+
+      // Group by class
+      const grouped = {};
+      for (const r of rows) {
+        const cls = r.student.class || '—';
+        if (!grouped[cls]) grouped[cls] = [];
+        grouped[cls].push(r);
+      }
+
+      // Sort students within each group by PAJSK desc
+      for (const cls of Object.keys(grouped)) {
+        grouped[cls].sort((a, b) => b.pajsk - a.pajsk);
+      }
+
+      // Overall stats
+      const totalPajsk = rows.reduce((sum, r) => sum + r.pajsk, 0);
+      const avgPajsk = rows.length ? (totalPajsk / rows.length) : 0;
+      const totalActive = rows.reduce((sum, r) => sum + r.active, 0);
+      const totalCompleted = rows.reduce((sum, r) => sum + r.completed, 0);
+
+      return `
+        <div class="header">
+          <h1>${I18N.t('teacher.title')}</h1>
+          <div class="filter-bar" style="margin:0;">
+            <select id="classFilter" style="padding:0.6rem 2.4rem 0.6rem 1rem;min-width:180px;">
+              <option value="all" ${selectedClass === 'all' ? 'selected' : ''}>
+                ${I18N.t('teacher.all_classes')} (${allStudents.length})
+              </option>
+              ${allClasses.map(cls => {
+                const count = allStudents.filter(s => s.class === cls).length;
+                return `<option value="${cls}" ${selectedClass === cls ? 'selected' : ''}>
+                  ${cls} (${count})
+                </option>`;
+              }).join('')}
+            </select>
+          </div>
+        </div>
+
+        <div class="grid-3">
+          <div class="stat">
+            <div class="label">${I18N.t('teacher.students')}</div>
+            <div class="value">${rows.length}</div>
+            <div class="sub">${selectedClass === 'all' ? I18N.t('teacher.all_classes') : selectedClass}</div>
+          </div>
+          <div class="stat">
+            <div class="label">${I18N.t('teacher.avg_pajsk')}</div>
+            <div class="value">${avgPajsk.toFixed(1)}</div>
+            <div class="sub">${I18N.t('teacher.across_selection')}</div>
+          </div>
+          <div class="stat">
+            <div class="label">${I18N.t('teacher.active')}</div>
+            <div class="value">${totalActive}</div>
+            <div class="sub">${totalCompleted} ${I18N.t('teacher.completed_lower')}</div>
+          </div>
+        </div>
+
+        ${Object.keys(grouped).length === 0
+          ? `<div class="card"><div class="empty"><i class="fas fa-inbox"></i>${I18N.t('teacher.no_students')}</div></div>`
+          : Object.entries(grouped).map(([cls, list]) => {
+              const classAvg = list.reduce((s, r) => s + r.pajsk, 0) / list.length;
+              return `
+                <div class="card">
+                  <div class="card-header">
+                    <div>
+                      <h3 style="margin-bottom:0.2rem;">${cls}</h3>
+                      <span class="text-muted" style="font-size:0.85rem;">
+                        ${list.length} ${I18N.t('teacher.students_lower')} ·
+                        ${I18N.t('teacher.avg')}: <strong>${classAvg.toFixed(1)}</strong>
+                      </span>
+                    </div>
+                  </div>
+
+                  <table>
+                    <tr>
+                      <th style="width:5%;">#</th>
+                      <th>${I18N.t('th.name')}</th>
+                      <th style="width:15%;text-align:center;">${I18N.t('teacher.active')}</th>
+                      <th style="width:15%;text-align:center;">${I18N.t('teacher.completed')}</th>
+                      <th style="width:15%;text-align:right;">${I18N.t('nav.pajsk')}</th>
+                      <th style="width:12%;"></th>
+                    </tr>
+                    ${list.map((r, i) => `
+                      <tr>
+                        <td style="color:var(--text-light);">${i + 1}</td>
+                        <td>
+                          <strong>${r.student.name}</strong>
+                          <br><span class="text-muted" style="font-size:0.78rem;">${r.student.email}</span>
+                        </td>
+                        <td style="text-align:center;">
+                          ${r.active > 0
+                            ? `<span class="badge badge-warning">${r.active}</span>`
+                            : `<span class="text-muted">—</span>`}
+                        </td>
+                        <td style="text-align:center;">
+                          ${r.completed > 0
+                            ? `<span class="badge badge-success">${r.completed}</span>`
+                            : `<span class="text-muted">—</span>`}
+                        </td>
+                        <td style="text-align:right;">
+                          <strong style="color:var(--primary);font-size:1.05rem;">
+                            ${r.pajsk.toFixed(1)}
+                          </strong>
+                        </td>
+                        <td>
+                          <button class="btn btn-outline btn-sm" data-view="${r.student.email}">
+                            <i class="fas fa-eye"></i> ${I18N.t('common.view')}
+                          </button>
+                        </td>
+                      </tr>
+                    `).join('')}
+                  </table>
+                </div>
+              `;
+            }).join('')}
+      `;
+    }
+
+    // ============================================================
+    //  TEACHER ANALYTICS TAB
+    // ============================================================
+    async function renderAnalytics() {
+      const students = await DB.Users.byRole('student');
+      const regs = await DB.Registrations.all();
+
+      // -------- Per-student PAJSK + activity --------
+      const rows = [];
+      for (const s of students) {
+        const p = await DB.calculatePajsk(s.email);
+        const studentRegs = regs.filter(r => r.studentEmail === s.email);
+        const active = studentRegs.filter(r => r.status === 'registered' || r.status === 'ongoing').length;
+        const completed = studentRegs.filter(r => r.status === 'completed').length;
+        rows.push({
+          student: s,
+          pajsk: p.total,
+          active,
+          completed
+        });
+      }
+
+      // -------- KPI --------
+      const totalStudents = rows.length;
+      const classes = [...new Set(students.map(s => s.class).filter(Boolean))];
+      const totalPajsk = rows.reduce((sum, r) => sum + r.pajsk, 0);
+      const avgPajsk = totalStudents ? (totalPajsk / totalStudents) : 0;
+      const activeCount = rows.filter(r => r.active > 0).length;
+      const activeRate = totalStudents ? Math.round((activeCount / totalStudents) * 100) : 0;
+
+      // -------- Chart 1 data --------
+      const classAvgs = classes.map(cls => {
+        const list = rows.filter(r => r.student.class === cls);
+        const avg = list.reduce((s, r) => s + r.pajsk, 0) / (list.length || 1);
+        return {
+          cls,
+          avg,
+          count: list.length
+        };
+      }).sort((a, b) => b.avg - a.avg);
+
+      // -------- Chart 2 data --------
+      const activityCounts = {
+        active: rows.filter(r => r.active > 0).length,
+        completed: rows.filter(r => r.active === 0 && r.completed > 0).length,
+        inactive: rows.filter(r => r.active === 0 && r.completed === 0).length
+      };
+
+      // -------- Chart 3 data --------
+      const topStudents = [...rows].sort((a, b) => b.pajsk - a.pajsk).slice(0, 10);
+
+      // Stash for attachHandlers to pick up
+      window.__teacherAnalytics = {
+        classAvgs,
+        activityCounts,
+        topStudents: topStudents.map(r => ({
+          name: r.student.name,
+          pajsk: r.pajsk,
+          class: r.student.class
+        }))
+      };
+
+      return `
+        <div class="header"><h1>${I18N.t('teacher.analytics_title')}</h1></div>
+
+        <div class="grid-4">
+          <div class="stat">
+            <div class="label">${I18N.t('teacher.kpi_students')}</div>
+            <div class="value">${totalStudents}</div>
+          </div>
+          <div class="stat">
+            <div class="label">${I18N.t('teacher.kpi_classes')}</div>
+            <div class="value">${classes.length}</div>
+          </div>
+          <div class="stat">
+            <div class="label">${I18N.t('teacher.kpi_avg_pajsk')}</div>
+            <div class="value">${avgPajsk.toFixed(1)}</div>
+          </div>
+          <div class="stat">
+            <div class="label">${I18N.t('teacher.kpi_active_rate')}</div>
+            <div class="value">${activeRate}%</div>
+            <div class="sub">${activeCount}/${totalStudents}</div>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <h3>${I18N.t('teacher.chart_class_pajsk')}</h3>
+            <div style="position:relative;height:280px;">
+              <canvas id="teacherClassChart"></canvas>
+            </div>
+          </div>
+          <div class="card">
+            <h3>${I18N.t('teacher.chart_activity')}</h3>
+            <div style="position:relative;height:280px;">
+              <canvas id="teacherActivityChart"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>${I18N.t('teacher.chart_top_students')}</h3>
+          <div style="position:relative;height:340px;">
+            <canvas id="teacherTopChart"></canvas>
+          </div>
+        </div>
+      `;
+    }
+
+    // ============================================================
+    // TEACHER CHARTS
+    // ============================================================
+    let teacherCharts = {};
+
+    function initTeacherCharts() {
+      const classCanvas = document.getElementById('teacherClassChart');
+      const activityCanvas = document.getElementById('teacherActivityChart');
+      const topCanvas = document.getElementById('teacherTopChart');
+
+      if (!classCanvas || !activityCanvas || !topCanvas) return;
+
+      // Destroy any old chart instances to avoid "Canvas already in use"
+      Object.values(teacherCharts).forEach(c => c && c.destroy());
+      teacherCharts = {};
+
+      const data = window.__teacherAnalytics;
+      if (!data) {
+        console.warn('No analytics data available — window.__teacherAnalytics is missing');
+        return;
+      }
+
+      // ============================================================
+      // CHART 1 — Avg PAJSK by class (vertical bar)
+      // ============================================================
+      // Auto-scale y-axis: max of class averages + 10% headroom, minimum 50
+      const classMax = data.classAvgs.length ?
+        Math.ceil(Math.max(...data.classAvgs.map(c => c.avg)) * 1.1) :
+        100;
+
+      teacherCharts.classAvg = new Chart(classCanvas, {
+        type: 'bar',
+        data: {
+          labels: data.classAvgs.map(c => c.cls),
+          datasets: [{
+            label: 'PAJSK',
+            data: data.classAvgs.map(c => Number(c.avg.toFixed(1))),
+            backgroundColor: '#6A4CFF',
+            borderRadius: 8,
+            maxBarThickness: 70
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              display: false
+            },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => {
+                  const c = data.classAvgs[ctx.dataIndex];
+                  return `Avg: ${c.avg.toFixed(1)} · ${c.count} students`;
+                }
+              }
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              max: classMax,
+              ticks: {
+                precision: 0
+              }
+            }
+          }
+        }
+      });
+
+      // ============================================================
+      // CHART 2 — Activity status (doughnut)
+      // ============================================================
+      teacherCharts.activity = new Chart(activityCanvas, {
+        type: 'doughnut',
+        data: {
+          labels: [
+            I18N.t('teacher.activity_active'),
+            I18N.t('teacher.activity_completed'),
+            I18N.t('teacher.activity_inactive')
+          ],
+          datasets: [{
+            data: [
+              data.activityCounts.active,
+              data.activityCounts.completed,
+              data.activityCounts.inactive
+            ],
+            backgroundColor: ['#FF9F43', '#2ECC71', '#c0c0d0'],
+            borderWidth: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: {
+                padding: 14,
+                boxWidth: 12
+              }
+            },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => {
+                  const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                  const pct = total ? Math.round((ctx.raw / total) * 100) : 0;
+                  return `${ctx.label}: ${ctx.raw} (${pct}%)`;
+                }
+              }
+            }
+          },
+          cutout: '60%'
+        }
+      });
+
+      // ============================================================
+      // CHART 3 — Top 10 students (horizontal bar)
+      // ============================================================
+      // Auto-scale x-axis to highest PAJSK + 10% headroom, minimum 100
+      const topMax = data.topStudents.length ?
+        Math.ceil(Math.max(...data.topStudents.map(r => r.pajsk)) * 1.1) :
+        100;
+
+      teacherCharts.top = new Chart(topCanvas, {
+        type: 'bar',
+        data: {
+          labels: data.topStudents.map(r => r.name),
+          datasets: [{
+            label: 'PAJSK',
+            data: data.topStudents.map(r => Number(r.pajsk.toFixed(1))),
+            backgroundColor: data.topStudents.map(r => {
+              if (r.pajsk >= 100) return '#2ECC71'; // green — top tier
+              if (r.pajsk >= 70) return '#6A4CFF'; // purple — good
+              if (r.pajsk >= 50) return '#FF9F43'; // amber — moderate
+              return '#c0c0d0'; // grey — low
+            }),
+            borderRadius: 8
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              display: false
+            },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => {
+                  const s = data.topStudents[ctx.dataIndex];
+                  return `${s.pajsk.toFixed(1)} · ${s.class || '—'}`;
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              beginAtZero: true,
+              max: topMax,
+              ticks: {
+                precision: 0
+              }
+            }
+          }
+        }
+      });
+    }
+
+    // ============================================================
+    //  EVENT HANDLERS
+    // ============================================================
+    function attachHandlers() {
+      const filter = document.getElementById('classFilter');
+      if (filter) {
+        filter.addEventListener('change', (e) => {
+          selectedClass = e.target.value;
+          render();
+        });
+      }
+
+      document.querySelectorAll('[data-view]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const email = btn.dataset.view;
+          showStudentDetail(email);
+        });
+      });
+
+      // Init charts if we're on the analytics tab
+      if (currentTab === 'analytics') initTeacherCharts();
+    }
+
+    // ============================================================
+    //  STUDENT DETAIL (modal-style view)
+    // ============================================================
+    async function showStudentDetail(email) {
+      const student = await DB.Users.get(email);
+      if (!student) {
+        showToast('Student not found', 'exclamation-circle');
+        return;
+      }
+
+      const pajskData = await DB.calculatePajsk(email);
+      const regs = await DB.Registrations.byStudent(email);
+      const marks = await DB.Marks.byStudent(email);
+      const comps = await DB.Competitions.all();
+
+      // Build a modal-like overlay
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-backdrop show';
+      overlay.id = 'studentDetailModal';
+      overlay.innerHTML = `
+        <div class="modal">
+          <div class="modal-header">
+            <div>
+              <h3>${student.name}</h3>
+              <p class="sub">${student.class || '—'} · ${student.email}</p>
+            </div>
+            <button class="modal-close" onclick="document.getElementById('studentDetailModal').remove()">✕</button>
+          </div>
+          <div class="modal-body">
+            <div class="grid-3" style="margin-bottom:1.2rem;">
+              <div class="stat" style="padding:1rem;">
+                <div class="label">${I18N.t('student.pajsk_total')}</div>
+                <div class="value" style="font-size:1.6rem;">${pajskData.total.toFixed(1)}</div>
+              </div>
+              <div class="stat" style="padding:1rem;">
+                <div class="label">${I18N.t('teacher.active')}</div>
+                <div class="value" style="font-size:1.6rem;">
+                  ${regs.filter(r => r.status === 'registered' || r.status === 'ongoing').length}
+                </div>
+              </div>
+              <div class="stat" style="padding:1rem;">
+                <div class="label">${I18N.t('teacher.completed')}</div>
+                <div class="value" style="font-size:1.6rem;">
+                  ${regs.filter(r => r.status === 'completed').length}
+                </div>
+              </div>
+            </div>
+
+            <h4 style="margin-bottom:0.6rem;">${I18N.t('student.pajsk_breakdown')}</h4>
+            ${marks.length === 0
+              ? `<div class="empty"><i class="fas fa-inbox"></i>${I18N.t('student.pajsk_empty')}</div>`
+              : `<table class="modal-table">
+                  <tr>
+                    <th>${I18N.t('th.competition')}</th>
+                    <th>${I18N.t('th.level')}</th>
+                    <th>${I18N.t('th.result')}</th>
+                    <th style="text-align:center;">${I18N.t('th.participation')}</th>
+                    <th style="text-align:center;">${I18N.t('th.achievement')}</th>
+                    <th style="text-align:right;">${I18N.t('th.total')}</th>
+                  </tr>
+                  ${marks.map(m => `
+                    <tr>
+                      <td>${m.source || m.competitionName || '—'}</td>
+                      <td>${m.level ? DB.levelLabel(m.level) : '—'}</td>
+                      <td>${m.result ? DB.resultLabel(m.result) : '—'}</td>
+                      <td style="text-align:center;">${m.participationScore ?? m.marks}</td>
+                      <td style="text-align:center;">${m.achievementScore ?? 0}</td>
+                      <td style="text-align:right;"><strong>${m.marks}</strong></td>
+                    </tr>
+                  `).join('')}
+                </table>`}
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-outline" onclick="document.getElementById('studentDetailModal').remove()">
+              ${I18N.t('common.close')}
+            </button>
+            <button class="btn btn-primary" onclick="
+              document.getElementById('studentDetailModal').remove();
+              openManualMarkModal('${student.email}');
+            ">
+              <i class="fas fa-plus"></i> ${I18N.t('teacher.add_mark')}
+            </button>
+          </div>
+        </div>
+      `;
+
+      // Close when clicking backdrop
+      overlay.addEventListener('click', (e) => {
+        if (e.target.id === 'studentDetailModal') overlay.remove();
+      });
+
+      // Close on Escape
+      const escHandler = (e) => {
+        if (e.key === 'Escape') {
+          overlay.remove();
+          document.removeEventListener('keydown', escHandler);
+        }
+      };
+      document.addEventListener('keydown', escHandler);
+
+      document.body.appendChild(overlay);
+    }
+
+    // ============================================================
+    //  HELPERS
+    // ============================================================
+    function showToast(msg, icon = 'check-circle') {
+      const t = document.getElementById('toast');
+      document.getElementById('toastMsg').innerText = msg;
+      t.querySelector('i').className = `fas fa-${icon}`;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 2200);
+    }
+
+    init();
+  </script>
+</body>
+
+</html>
