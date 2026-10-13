@@ -23,6 +23,18 @@
         <div class="nav-item" data-tab="browse"><i class="fas fa-trophy"></i> <span data-i18n="nav.browse"></span></div>
         <div class="nav-item" data-tab="mycomps"><i class="fas fa-list-check"></i> <span data-i18n="nav.mycomps"></span></div>
         <div class="nav-item" data-tab="pajsk"><i class="fas fa-star"></i> <span data-i18n="nav.pajsk"></span></div>
+        <div class="nav-item" onclick="openAiSettings()"><i class="fas fa-robot"></i>
+          <span data-i18n="reflect.ai_settings"></span>
+          <span id="aiKeyStatus" style="
+            margin-left:auto;
+            font-size:0.7rem;
+            font-weight:700;
+            padding:2px 6px;
+            border-radius:10px;
+            background:#fff2e0;
+            color:#b45f06;
+          ">!</span>
+        </div>
         <div class="nav-item" onclick="DB.resetDemo()"><i class="fas fa-rotate-left"></i> <span data-i18n="nav.reset"></span></div>
         <div class="nav-item logout" onclick="DB.logout()"><i class="fas fa-sign-out-alt"></i> <span data-i18n="nav.logout"></span></div>
       </nav>
@@ -50,7 +62,10 @@
 
   <script src="scripts/i18n.js"></script>
   <script src="scripts/db.js"></script>
+  <script src="scripts/table-tools.js"></script>
   <script src="scripts/tour.js"></script>
+  <script src="scripts/ai.js"></script>
+  <script src="scripts/ai-settings.js"></script>
   <script>
     let user = null;
     let currentTab = 'dashboard';
@@ -176,7 +191,15 @@
       }
 
       return `
-        <div class="header"><h1>${I18N.t('student.browse_title')}</h1></div>
+        <div class="header">
+          <h1>${I18N.t('student.browse_title')}</h1>
+          <button class="btn btn-primary btn-sm" id="recommendBtn" onclick="runRecommendations()">
+            <i class="fas fa-magic"></i> ${I18N.t('student.recommend_btn')}
+          </button>
+        </div>
+
+        <div id="recommendPanel"></div>
+
         <div class="card">
           <table>
             <tr>
@@ -184,6 +207,7 @@
               <th>${I18N.t('th.level')}</th>
               <th>${I18N.t('th.category')}</th>
               <th>${I18N.t('th.date')}</th>
+              <th>${I18N.t('th.link')}</th>
               <th>${I18N.t('th.marks')}</th>
               <th></th>
             </tr>
@@ -196,6 +220,13 @@
                   <td>${DB.levelLabel(c.level)}<br><span class="text-muted" style="font-size:0.75rem;">${DB.engagementShort(c.engagementType)}</span></td>
                   <td>${c.category}</td>
                   <td>${c.date}</td>
+                  <td>
+                    ${c.url
+                      ? `<a href="${escapeHtml(c.url)}" target="_blank" rel="noopener noreferrer" class="btn btn-outline btn-sm" title="${I18N.t('th.open_link')}">
+                           <i class="fas fa-external-link-alt"></i> ${I18N.t('th.open_link')}
+                         </a>`
+                      : `<span class="text-muted">—</span>`}
+                  </td>
                   <td><span class="badge badge-info">${c.participationScore}${c.maxAchievementScore ? ' – ' + max : ''}</span></td>
                   <td>
                     ${isRegistered
@@ -210,9 +241,108 @@
       `;
     }
 
+    // ============================================================
+    //  AI RECOMMENDATIONS
+    // ============================================================
+    async function runRecommendations() {
+      const btn = document.getElementById('recommendBtn');
+      const panel = document.getElementById('recommendPanel');
+      if (!btn || !panel) return;
+
+      btn.disabled = true;
+      btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${I18N.t('student.recommend_btn')}`;
+
+      panel.innerHTML = `
+        <div class="card" style="text-align:center;padding:1.8rem;">
+          <div style="font-size:2rem;color:var(--primary);margin-bottom:0.6rem;">
+            <i class="fas fa-spinner fa-spin"></i>
+          </div>
+          <p class="text-muted">${I18N.t('student.recommend_loading')}</p>
+        </div>
+      `;
+
+      try {
+        const lang = I18N.getLanguage();
+        const picks = await AI.aiRecommendCompetitions(user.email, lang);
+
+        if (picks.length === 0) {
+          panel.innerHTML = `<div class="card">${emptyState(I18N.t('student.recommend_none'))}</div>`;
+        } else {
+            panel.innerHTML = renderRecommendations(picks);
+
+            // Bind the register buttons inside the panel
+            panel.querySelectorAll('[data-register]').forEach(btn => {
+              btn.addEventListener('click', async () => {
+                const compId = parseInt(btn.dataset.register, 10);
+                await DB.Registrations.add({
+                  studentEmail: user.email,
+                  competitionId: compId,
+                  status: 'registered',
+                  registeredAt: Date.now(),
+                  result: null,
+                  participationScore: 0,
+                  achievementScore: 0,
+                  totalPajsk: 0
+                });
+                showToast(I18N.t('student.registered_toast'), 'check-circle');
+                render();
+              });
+            });
+        }
+      } catch (err) {
+        console.error(err);
+        panel.innerHTML = `<div class="card" style="background:#fff5f7;border-color:#ffd5dd;">
+          <p style="color:#c41e3a;margin:0;">
+            <i class="fas fa-exclamation-triangle"></i> ${I18N.t('student.recommend_failed')}
+          </p>
+        </div>`;
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<i class="fas fa-magic"></i> ${I18N.t('student.recommend_btn')}`;
+      }
+    }
+
+    function renderRecommendations(picks) {
+      return `
+        <div class="card" style="background:linear-gradient(135deg,#f5f3ff 0%,#fff 100%);border:1px solid #e0daff;">
+          <div style="margin-bottom:1rem;">
+            <h3 style="margin-bottom:0.2rem;">
+              <i class="fas fa-magic" style="color:var(--primary);"></i>
+              ${I18N.t('student.recommend_title')}
+            </h3>
+            <p class="text-muted" style="font-size:0.88rem;margin:0;">
+              ${I18N.t('student.recommend_subtitle')}
+            </p>
+          </div>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:0.8rem;">
+            ${picks.map(p => `
+              <div style="background:white;border:1px solid var(--border);border-radius:12px;padding:1rem;display:flex;flex-direction:column;">
+                <div style="flex:1;">
+                  <strong style="font-size:0.95rem;display:block;margin-bottom:0.3rem;">${p.competition.name}</strong>
+                  <div class="flex" style="gap:0.4rem;flex-wrap:wrap;margin-bottom:0.6rem;">
+                    <span class="badge badge-info">${p.competition.category}</span>
+                    <span class="badge badge-secondary">${DB.levelLabel(p.competition.level)}</span>
+                  </div>
+                  <p style="font-size:0.82rem;color:var(--text-muted);line-height:1.5;margin-bottom:0.8rem;">
+                    <i class="fas fa-lightbulb" style="color:var(--warning);"></i>
+                    ${escapeHtml(p.reason)}
+                  </p>
+                </div>
+                <button class="btn btn-primary btn-sm" data-register="${p.competition.id}">
+                  <i class="fas fa-plus"></i> ${I18N.t('student.recommend_register')}
+                </button>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+
     async function renderMyComps() {
       const regs  = await DB.Registrations.byStudent(user.email);
       const comps = await DB.Competitions.all();
+      const reflections = await DB.Reflections.byStudent(user.email);
 
       if (regs.length === 0) {
         return `<div class="header"><h1>${I18N.t('student.my_title')}</h1></div>
@@ -230,6 +360,7 @@
               <th>${I18N.t('th.status')}</th>
               <th>${I18N.t('th.result')}</th>
               <th>${I18N.t('th.marks')}</th>
+              <th></th>
             </tr>
             ${regs.map(r => {
               const c = comps.find(c => c.id === r.competitionId);
@@ -239,6 +370,10 @@
                 ongoing:    'badge-info',
                 completed:  'badge-success'
               }[r.status] || 'badge-secondary';
+
+              const reflection = reflections.find(x => x.competitionId === c.id);
+              const canReflect = r.status === 'completed';
+
               return `
                 <tr>
                   <td>${c.name}</td>
@@ -247,6 +382,17 @@
                   <td><span class="badge ${badge}">${DB.statusLabel(r.status)}</span></td>
                   <td>${r.result ? DB.resultLabel(r.result) : '—'}</td>
                   <td>${r.totalPajsk ? '<strong>' + r.totalPajsk + '</strong>' : '—'}</td>
+                  <td>
+                    ${canReflect
+                      ? reflection
+                        ? `<button class="btn btn-outline btn-sm" data-view-reflection="${c.id}">
+                            <i class="fas fa-eye"></i> ${I18N.t('reflect.view')}
+                          </button>`
+                        : `<button class="btn btn-primary btn-sm" data-reflect="${c.id}">
+                            <i class="fas fa-magic"></i> ${I18N.t('reflect.button')}
+                          </button>`
+                      : ''}
+                  </td>
                 </tr>
               `;
             }).join('')}
@@ -318,6 +464,34 @@
           render();
         });
       });
+
+      document.querySelectorAll('[data-reflect]').forEach(btn => {
+        btn.addEventListener('click', () => {
+        const compId = parseInt(btn.dataset.reflect, 10);
+        openReflectionCoach(compId);
+        });
+        });
+
+        document.querySelectorAll('[data-view-reflection]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+        const compId = parseInt(btn.dataset.viewReflection, 10);
+        const reflection = await DB.Reflections.find(user.email, compId);
+        if (reflection) showReflectionReport(reflection);
+        });
+      });
+
+      // ---------- Table tools ----------
+      if (currentTab === 'browse' && document.getElementById('browseTable')) {
+        TableTools.attach({
+          tableSelector: '#browseTable',
+          searchInput: '#browseSearch',
+          filters: [
+          { id: 'browseCategory', column: 2 },
+          { id: 'browseLevel', column: 1 }
+          ],
+          emptyMessage: I18N.t('student.browse_empty')
+        });
+      }
     }
 
     function emptyState(msg) {
@@ -330,6 +504,246 @@
       tEl.querySelector('i').className = `fas fa-${icon}`;
       tEl.classList.add('show');
       setTimeout(() => tEl.classList.remove('show'), 2200);
+    }
+
+    // ============================================================
+    //  REFLECTION COACH
+    // ============================================================
+    async function openReflectionCoach(competitionId) {
+      // Fetch existing reflection if any
+      const existing = await DB.Reflections.find(user.email, competitionId);
+
+      if (existing) {
+        showReflectionReport(existing);
+        return;
+      }
+
+      const comp = await DB.Competitions.get(competitionId);
+      const reg  = await DB.Registrations.find(user.email, competitionId);
+      if (!comp) return;
+
+      const questions = AI.REFLECTION_QUESTIONS[I18N.getLanguage()] || AI.REFLECTION_QUESTIONS.en;
+      let answers = {};
+      let currentIdx = 0;
+
+      // Build modal shell once
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-backdrop show';
+      overlay.id = 'reflectionModal';
+      document.body.appendChild(overlay);
+
+      function renderStep() {
+        const isLast = currentIdx === questions.length - 1;
+        const q = questions[currentIdx];
+
+        overlay.innerHTML = `
+          <div class="modal" style="max-width:640px;">
+            <div class="modal-header">
+              <div>
+                <h3>${I18N.t('reflect.title')}</h3>
+                <p class="sub">${I18N.t('reflect.subtitle')} · ${comp.name}</p>
+              </div>
+              <button class="modal-close" onclick="document.getElementById('reflectionModal').remove()">✕</button>
+            </div>
+
+            <div class="modal-body">
+              <div style="margin-bottom:1rem;">
+                <div class="flex-between" style="margin-bottom:0.6rem;">
+                  <span class="text-muted" style="font-size:0.85rem;">
+                    ${I18N.t('reflect.question_n', { n: currentIdx + 1, total: questions.length })}
+                  </span>
+                </div>
+                <div class="progress-bar" style="margin-bottom:1.5rem;">
+                  <div class="progress-fill" style="width:${((currentIdx + 1) / questions.length) * 100}%"></div>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label style="font-size:1rem;line-height:1.5;margin-bottom:0.8rem;color:var(--text);">
+                  ${q.text}
+                </label>
+                <textarea
+                  id="reflectAnswer"
+                  rows="5"
+                  placeholder="${I18N.t('reflect.placeholder')}"
+                  style="padding-left:1rem;"
+                >${answers[q.id] || ''}</textarea>
+              </div>
+            </div>
+
+            <div class="modal-footer">
+              <button class="btn btn-outline" onclick="document.getElementById('reflectionModal').remove()">
+                ${I18N.t('common.cancel')}
+              </button>
+              ${currentIdx > 0 ? `<button class="btn btn-outline" id="reflectBackBtn">${I18N.t('reflect.back')}</button>` : ''}
+              <button class="btn btn-primary" id="reflectNextBtn">
+                ${isLast ? `<i class="fas fa-magic"></i> ${I18N.t('reflect.submit')}` : I18N.t('reflect.next')}
+              </button>
+            </div>
+          </div>
+        `;
+
+        // Restore focus + value
+        const ta = document.getElementById('reflectAnswer');
+        if (answers[q.id]) ta.value = answers[q.id];
+        ta.focus();
+
+        // Save on blur/input
+        ta.addEventListener('input', () => { answers[q.id] = ta.value; });
+
+        // Back button
+        const backBtn = document.getElementById('reflectBackBtn');
+        if (backBtn) backBtn.addEventListener('click', () => {
+          answers[q.id] = ta.value;
+          currentIdx--;
+          renderStep();
+        });
+
+        // Next / Submit
+        document.getElementById('reflectNextBtn').addEventListener('click', async () => {
+          answers[q.id] = ta.value.trim();
+
+          if (isLast) {
+            // Validate: at least Q1 answered
+            if (!answers[questions[0].id]) {
+              showToast(I18N.t('reflect.required'), 'exclamation-circle');
+              return;
+            }
+            await submitReflection(comp, reg, questions, answers);
+          } else {
+            currentIdx++;
+            renderStep();
+          }
+        });
+      }
+
+      renderStep();
+    }
+
+    // ============================================================
+    //  SUBMIT + GENERATE
+    // ============================================================
+    async function submitReflection(comp, reg, questions, answers) {
+      const overlay = document.getElementById('reflectionModal');
+
+      // Show loading state
+      overlay.innerHTML = `
+        <div class="modal" style="max-width:640px;">
+          <div class="modal-body" style="padding:3rem;text-align:center;">
+            <div style="font-size:3rem;color:var(--primary);margin-bottom:1rem;">
+              <i class="fas fa-spinner fa-spin"></i>
+            </div>
+            <h3 style="margin-bottom:0.5rem;">${I18N.t('reflect.generating')}</h3>
+            <p class="text-muted">This usually takes 5–10 seconds.</p>
+          </div>
+        </div>
+      `;
+
+      try {
+        const insights = await AI.generateReflectionReport({
+          studentName: user.name,
+          competitionName: comp.name,
+          level: DB.levelLabel(comp.level),
+          result: reg?.result ? DB.resultLabel(reg.result) : 'participation',
+          answers
+        });
+
+        const reflection = {
+          studentEmail: user.email,
+          competitionId: comp.id,
+          competitionName: comp.name,
+          answers,
+          questions: questions.map(q => ({ id: q.id, text: q.text })),
+          insights,
+          aiEnabled: AI.hasAiKey(),
+          createdAt: Date.now()
+        };
+
+        await DB.Reflections.add(reflection);
+        overlay.remove();
+        showToast(I18N.t('reflect.saved'), 'check-circle');
+        render();
+      } catch (err) {
+        console.error(err);
+        overlay.remove();
+        showToast(I18N.t('reflect.failed'), 'exclamation-circle');
+      }
+    }
+
+    // ============================================================
+    //  VIEW SAVED REFLECTION
+    // ============================================================
+    function showReflectionReport(reflection) {
+      document.getElementById('reflectionReportModal')?.remove();
+
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-backdrop show';
+      overlay.id = 'reflectionReportModal';
+      overlay.innerHTML = `
+        <div class="modal" style="max-width:680px;">
+          <div class="modal-header">
+            <div>
+              <h3>${I18N.t('reflect.report_title')}</h3>
+              <p class="sub">${I18N.t('reflect.report_for', { name: user.name })} · ${reflection.competitionName}</p>
+            </div>
+            <button class="modal-close" onclick="document.getElementById('reflectionReportModal').remove()">✕</button>
+          </div>
+
+          <div class="modal-body">
+            ${!reflection.aiEnabled ? `
+              <div class="chip chip-warning" style="margin-bottom:1rem;">
+                <i class="fas fa-info-circle"></i> ${I18N.t('reflect.demo_mode')}
+              </div>
+            ` : ''}
+
+            <h4 style="margin-bottom:0.6rem;">${I18N.t('reflect.insights')}</h4>
+            <div style="
+              background:var(--primary-light);
+              padding:1.2rem 1.4rem;
+              border-radius:12px;
+              font-size:0.92rem;
+              line-height:1.7;
+              white-space:pre-wrap;
+              margin-bottom:1.5rem;
+            ">${AI.markdownToHtml(reflection.insights)}</div>
+
+            <h4 style="margin-bottom:0.6rem;">${I18N.t('reflect.answers')}</h4>
+            <table class="modal-table">
+              ${reflection.questions.map(q => `
+                <tr>
+                  <td style="width:45%;vertical-align:top;padding:0.6rem 0.4rem;">
+                    <strong style="font-size:0.88rem;">${escapeHtml(q.text)}</strong>
+                  </td>
+                  <td style="padding:0.6rem 0.4rem;color:var(--text-muted);font-size:0.9rem;">
+                    ${reflection.answers[q.id]
+                      ? escapeHtml(reflection.answers[q.id])
+                      : `<em>${I18N.t('reflect.not_answered')}</em>`}
+                  </td>
+                </tr>
+              `).join('')}
+            </table>
+          </div>
+
+          <div class="modal-footer">
+            <button class="btn btn-outline" onclick="document.getElementById('reflectionReportModal').remove()">
+              ${I18N.t('common.close')}
+            </button>
+          </div>
+        </div>
+      `;
+
+      overlay.addEventListener('click', (e) => {
+        if (e.target.id === 'reflectionReportModal') overlay.remove();
+      });
+
+      document.body.appendChild(overlay);
+    }
+
+    // Helper — safe text rendering
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text || '';
+      return div.innerHTML;
     }
 
     init();

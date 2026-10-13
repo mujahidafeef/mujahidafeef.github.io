@@ -4,9 +4,31 @@
 // ============================================================
 
 const DB_NAME = 'EduMinatDB';
-const DB_VERSION = 3;
+const DB_VERSION = 6;
 
 let db;
+
+
+const DEFAULT_KPM_LETTERHEAD = {
+  directorName: 'Ithnin bin Mahadi',
+  directorDesignation: 'Pengarah',
+
+  contactName: 'Puan Sanoyah binti Yusof',
+  contactPhoneLandline: '03-88841179',
+  contactPhoneMobile: '012-3311 537',
+  contactEmail: 'sanoyah.yusof@moe.gov.my',
+
+  divisionName: 'Bahagian Sukan, Kokurikulum dan Kesenian',
+  ministryName: 'Kementerian Pendidikan Malaysia',
+  address: 'Aras 1, 2 & 7, Blok E13, Kompleks E\nPusat Pentadbiran Kerajaan Persekutuan\n62604 PUTRAJAYA MALAYSIA',
+  phone: '+603 8884 1001 / +603 8884 1002',
+  fax: '+603 8884 1034',
+  website: 'www.moe.gov.my',
+
+  refPrefix: 'KPM.600-4/1/1 Jld. 5',
+  refStart: 1,
+  //letterLanguage: 'my'
+};
 
 // ============================================================
 //  OPEN DB
@@ -107,6 +129,26 @@ function openDB() {
           keyPath: 'status'
         }
       ]);
+
+      // ---------- reflections (NEW v4) ----------
+      ensureStore('reflections', {
+        keyPath: 'id',
+        autoIncrement: true
+      }, [{
+          name: 'student',
+          keyPath: 'studentEmail'
+        },
+        {
+          name: 'competition',
+          keyPath: 'competitionId'
+        }
+      ]);
+
+      // ---------- settings ----------
+      ensureStore('settings', {
+        keyPath: 'key'
+      });
+
     };
 
     req.onsuccess = () => {
@@ -354,6 +396,31 @@ const Session = {
   clear: () => tx('session', 'readwrite', s => s.delete('current'))
 };
 
+// ---------- Reflections ----------
+const Reflections = {
+  add: (r) => tx('reflections', 'readwrite', s => s.add(r)),
+  put: (r) => tx('reflections', 'readwrite', s => s.put(r)),
+  get: (id) => tx('reflections', 'readonly', s => s.get(id)),
+  all: () => tx('reflections', 'readonly', s => s.getAll()),
+  byStudent: (email) => tx('reflections', 'readonly', s => s.index('student').getAll(email)),
+  byCompetition: (id) => tx('reflections', 'readonly', s => s.index('competition').getAll(id)),
+  find: async (studentEmail, competitionId) => {
+    const all = await tx('reflections', 'readonly', s => s.getAll());
+    return all.find(r => r.studentEmail === studentEmail && r.competitionId === competitionId);
+  }
+};
+
+// ---------- Settings ----------
+const Settings = {
+  get: (key) => tx('settings', 'readonly', s => s.get(key)),
+  set: (key, value) => tx('settings', 'readwrite', s => s.put({
+    key,
+    value
+  })),
+  //all: () => tx('settings', 'readonly', s => s.getAll()),
+  delete: (key) => tx('settings', 'readwrite', s => s.delete(key))
+};
+
 // ============================================================
 //  CONVENIENCE HELPERS
 // ============================================================
@@ -407,6 +474,9 @@ async function resetDemo() {
   }
 }
 
+// Simple in-memory PAJSK cache
+const __pajskCache = new Map();
+
 async function calculatePajsk(studentEmail) {
   const BASE_ATTENDANCE = 40;
   const BASE_JAWATAN = 10;
@@ -422,8 +492,431 @@ async function calculatePajsk(studentEmail) {
   };
 }
 
+// Clear cache whenever marks or registrations change
+function invalidatePajskCache() {
+  __pajskCache.clear();
+}
+
 // ============================================================
-//  SEED DEMO DATA (comprehensive — covers all use cases)
+//  SEEDED RNG — deterministic random (mulberry32)
+// ============================================================
+function makeRng(seed) {
+  return function() {
+    seed |= 0;
+    seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const rng = makeRng(20261013);
+const pick = (arr) => arr[Math.floor(rng() * arr.length)];
+const pickN = (arr, n) => {
+  const copy = [...arr];
+  const out = [];
+  for (let i = 0; i < n && copy.length; i++) {
+    out.push(copy.splice(Math.floor(rng() * copy.length), 1)[0]);
+  }
+  return out;
+};
+
+// ============================================================
+//  DEMO DATA POOLS
+// ============================================================
+const CLASSES = [
+  '5 Alpha', '5 Beta', '4 Alpha', '4 Beta',
+  '3 Alpha', '2 Alpha', '2 Beta', '1 Alpha'
+];
+
+const MALE_NAMES = [
+  'Ahmad Zaki', 'Danial Haziq', 'Irfan Hakimi', 'Hafiz Rahman', 'Zaki Iskandar',
+  'Amirul Asyraf', 'Iman Hakim', 'Luqman Nur', 'Firdaus Azmi', 'Hakim Danish',
+  'Ridzuan Amin', 'Syafiq Rahim', 'Aiman Zulkifli', 'Harith Iskandar', 'Naufal Idris',
+  'Rizqi Adnan', 'Nabil Farhan', 'Umar Abdul', 'Yusuf Hakim', 'Hamzah Roslan'
+];
+const FEMALE_NAMES = [
+  'Nur Aisyah', 'Liyana Zulkifli', 'Sarah Ismail', 'Aminah Diyana', 'Fatimah Az-Zahra',
+  'Siti Khadijah', 'Nur Hidayah', 'Alya Damia', 'Sofia Iman', 'Balqis Zahra',
+  'Sumayyah Nur', 'Khadijah Amal', 'Maryam Aisyah', 'Zahra Insyirah', 'Hana Safiya',
+  'Nadhirah Izz', 'Wardina Sofia', 'Salsabila', 'Raudhah Nur', 'Husna Adlina'
+];
+
+const COMP_CATEGORIES = ['STEM', 'Language', 'Arts', 'Sports'];
+
+const COMP_SUBJECTS = {
+  STEM: ['Coding', 'Robotics', 'Mathematics', 'Physics', 'Chemistry', 'Biology', 'Engineering', 'Data Science', 'AI', 'Astronomy'],
+  Language: ['Essay Writing', 'Debate', 'Public Speaking', 'Poetry', 'Storytelling', 'Translation'],
+  Arts: ['Digital Arts', 'Painting', 'Photography', 'Drama', 'Music', 'Dance', 'Design'],
+  Sports: ['Badminton', 'Athletics', 'Swimming', 'Football', 'Basketball', 'Chess', 'Cycling']
+};
+
+const COMP_LEVELS = [{
+    key: 'antarabangsa',
+    weight: 6,
+    prefix: 'International'
+  },
+  {
+    key: 'kebangsaan',
+    weight: 20,
+    prefix: 'National'
+  },
+  {
+    key: 'negeri',
+    weight: 25,
+    prefix: 'State-Level'
+  },
+  {
+    key: 'bahagian',
+    weight: 15,
+    prefix: 'Division-Level'
+  },
+  {
+    key: 'zon_daerah',
+    weight: 20,
+    prefix: 'District-Level'
+  }
+];
+
+const COMP_SUFFIXES = ['Championship', 'Challenge', 'Olympiad', 'Cup', 'Competition', 'Festival', 'Tournament', 'Contest'];
+
+const ORGANIZER_POOL = [{
+    email: 'organizer@eduminat.my',
+    name: 'FutureTech Academy'
+  },
+  {
+    email: 'organizer2@eduminat.my',
+    name: 'ArtsHub Malaysia'
+  },
+  {
+    email: 'organizer3@eduminat.my',
+    name: 'EduSports Alliance'
+  }
+];
+
+const SCHOOL_NAME_POOL = ['SK Putrajaya Presint 11 (2)', 'SK Lubok Kelubi', 'SK Pengkalan Kubor (1)', 'Sekolah Tuanku Abdul Rahman', 'SMK Putrajaya Presint 8 (1)', 'SMK Taman Tun Dr Ismail', 'SMK Seri Bintang Utara', 'SMK Bandar Baru Uda', 'SMK Sultan Abdul Samad', 'SMK Jalan Empat', 'SMK Seri Kembangan', 'SMK Taman Desa', 'SMK Bukit Jalil', 'SMK Bandar Tun Hussein Onn', 'SMK Seri Serdang'];
+
+// Weighted random picker
+function weightedPick(weightedArr) {
+  const total = weightedArr.reduce((s, x) => s + x.weight, 0);
+  let r = rng() * total;
+  for (const item of weightedArr) {
+    r -= item.weight;
+    if (r <= 0) return item;
+  }
+  return weightedArr[weightedArr.length - 1];
+}
+
+// ============================================================
+//  CANNED REFLECTIONS — pre-written AI output
+// ============================================================
+const CANNED_REFLECTIONS = [{
+    insights: `**What went well:**
+      You showed strong problem-solving skills during the competition. Your ability to stay calm under pressure was evident, and you collaborated well with your team.
+
+      **What to improve:**
+      Consider documenting your process more systematically. Keeping a simple log during future competitions could help you identify what worked and what didn't.
+
+      **What's next:**
+      Look for competitions that stretch your technical skills. A national-level event in the same category would be a great next step.`,
+    questions: [{
+        id: 'q1',
+        text: 'What did you learn from this competition that you didn\'t know before?'
+      },
+      {
+        id: 'q2',
+        text: 'What was the most challenging moment, and how did you handle it?'
+      },
+      {
+        id: 'q3',
+        text: 'What would you do differently if you could start over?'
+      },
+      {
+        id: 'q4',
+        text: 'How did you work with others, and what role did you play in the team?'
+      },
+      {
+        id: 'q5',
+        text: 'What\'s one skill you want to improve before your next competition?'
+      }
+    ],
+    answers: {
+      q1: 'I learned that debugging under time pressure requires a different mindset than debugging at home.',
+      q2: 'Our robot stopped working in round 2. We had to rewire it in 10 minutes.',
+      q3: 'I would test the battery backup earlier.',
+      q4: 'I was the lead coder. I coordinated the team on the technical side.',
+      q5: 'I want to improve my time management during the build phase.'
+    }
+  },
+  {
+    insights: `**What went well:**
+      Your presentation skills stood out. You engaged the judges with clear, confident delivery and strong supporting evidence.
+
+      **What to improve:**
+      The research portion could be deeper. Consider spending more time on the background before the event.
+
+      **What's next:**
+      Public speaking at the state level would be a natural next step. Look for debate or presentation-based competitions.`,
+    questions: [{
+        id: 'q1',
+        text: 'What did you learn from this competition that you didn\'t know before?'
+      },
+      {
+        id: 'q2',
+        text: 'What was the most challenging moment, and how did you handle it?'
+      },
+      {
+        id: 'q3',
+        text: 'What would you do differently if you could start over?'
+      },
+      {
+        id: 'q4',
+        text: 'How did you work with others, and what role did you play in the team?'
+      },
+      {
+        id: 'q5',
+        text: 'What\'s one skill you want to improve before your next competition?'
+      }
+    ],
+    answers: {
+      q1: 'I learned that research and delivery are equally important — one without the other weakens the pitch.',
+      q2: 'I was asked a question I hadn\'t anticipated. I had to think on my feet.',
+      q3: 'I would prepare more backup statistics.',
+      q4: 'I was the main presenter. My teammate handled Q&A support.',
+      q5: 'I want to improve my impromptu speaking.'
+    }
+  },
+  {
+    insights: `**What went well:**
+      You demonstrated resilience — recovering from a slow start and finishing strong. Your persistence is a real strength.
+
+      **What to improve:**
+      Early-stage strategy could use work. Plan the first 20% of any competition more carefully.
+
+      **What's next:**
+      Consider entering a mixed-level event where you can benchmark against stronger opponents.`,
+    questions: [{
+        id: 'q1',
+        text: 'What did you learn from this competition that you didn\'t know before?'
+      },
+      {
+        id: 'q2',
+        text: 'What was the most challenging moment, and how did you handle it?'
+      },
+      {
+        id: 'q3',
+        text: 'What would you do differently if you could start over?'
+      },
+      {
+        id: 'q4',
+        text: 'How did you work with others, and what role did you play in the team?'
+      },
+      {
+        id: 'q5',
+        text: 'What\'s one skill you want to improve before your next competition?'
+      }
+    ],
+    answers: {
+      q1: 'I learned that the first hour sets the tone for the rest of the day.',
+      q2: 'I fell behind early and had to catch up. I focused on small wins.',
+      q3: 'I would plan the first hour better.',
+      q4: 'I worked solo but coordinated with friends for mutual support.',
+      q5: 'Better opening strategy.'
+    }
+  },
+  {
+    insights: `**What went well:**
+      Excellent teamwork. You naturally took a supportive role and helped others stay focused — a skill many overlook.
+
+      **What to improve:**
+      Consider developing a specialised strength to complement your team-player role.
+
+      **What's next:**
+      Try an event where you can lead a small group — you're ready for it.`,
+    questions: [{
+        id: 'q1',
+        text: 'What did you learn from this competition that you didn\'t know before?'
+      },
+      {
+        id: 'q2',
+        text: 'What was the most challenging moment, and how did you handle it?'
+      },
+      {
+        id: 'q3',
+        text: 'What would you do differently if you could start over?'
+      },
+      {
+        id: 'q4',
+        text: 'How did you work with others, and what role did you play in the team?'
+      },
+      {
+        id: 'q5',
+        text: 'What\'s one skill you want to improve before your next competition?'
+      }
+    ],
+    answers: {
+      q1: 'I learned that keeping the team calm is as valuable as solving the problem.',
+      q2: 'Two teammates disagreed on approach. I helped mediate.',
+      q3: 'I would speak up earlier about my own ideas.',
+      q4: 'I was the coordinator — I kept everyone on track.',
+      q5: 'I want to build more technical depth.'
+    }
+  },
+  {
+    insights: `**What went well:**
+      You completed the event with minimal support, showing strong self-direction and independence.
+
+      **What to improve:**
+      Try collaborating more in future events — some of your best ideas may come from working with others.
+
+      **What's next:**
+      A team-based competition would balance your independence with collaborative skills.`,
+    questions: [{
+        id: 'q1',
+        text: 'What did you learn from this competition that you didn\'t know before?'
+      },
+      {
+        id: 'q2',
+        text: 'What was the most challenging moment, and how did you handle it?'
+      },
+      {
+        id: 'q3',
+        text: 'What would you do differently if you could start over?'
+      },
+      {
+        id: 'q4',
+        text: 'How did you work with others, and what role did you play in the team?'
+      },
+      {
+        id: 'q5',
+        text: 'What\'s one skill you want to improve before your next competition?'
+      }
+    ],
+    answers: {
+      q1: 'I learned that I can rely on myself when needed.',
+      q2: 'Time ran short and I had to make hard choices.',
+      q3: 'I would start earlier.',
+      q4: 'I worked solo this time.',
+      q5: 'Teamwork experience.'
+    }
+  },
+  {
+    insights: `**What went well:**
+      Strong technical execution — you clearly prepared well in advance. Your results reflected that effort.
+
+      **What to improve:**
+      Don't neglect the presentation side. Judges reward clarity as much as substance.
+
+      **What's next:**
+      Consider a higher-level event in the same category. You're ready to compete at a bigger scale.`,
+    questions: [{
+        id: 'q1',
+        text: 'What did you learn from this competition that you didn\'t know before?'
+      },
+      {
+        id: 'q2',
+        text: 'What was the most challenging moment, and how did you handle it?'
+      },
+      {
+        id: 'q3',
+        text: 'What would you do differently if you could start over?'
+      },
+      {
+        id: 'q4',
+        text: 'How did you work with others, and what role did you play in the team?'
+      },
+      {
+        id: 'q5',
+        text: 'What\'s one skill you want to improve before your next competition?'
+      }
+    ],
+    answers: {
+      q1: 'I learned that preparation pays off more than raw talent.',
+      q2: 'A last-minute change almost broke our plan. We adapted.',
+      q3: 'Nothing major — I would keep the same approach.',
+      q4: 'I led the technical side.',
+      q5: 'Presentation confidence.'
+    }
+  },
+  {
+    insights: `**What went well:**
+      You showed curiosity — asking questions and learning from every interaction. That mindset will take you far.
+
+      **What to improve:**
+      Confidence in delivery. You know the material; trust yourself to speak up more.
+
+      **What's next:**
+      Try a competition with more live interaction — you'll grow fastest that way.`,
+    questions: [{
+        id: 'q1',
+        text: 'What did you learn from this competition that you didn\'t know before?'
+      },
+      {
+        id: 'q2',
+        text: 'What was the most challenging moment, and how did you handle it?'
+      },
+      {
+        id: 'q3',
+        text: 'What would you do differently if you could start over?'
+      },
+      {
+        id: 'q4',
+        text: 'How did you work with others, and what role did you play in the team?'
+      },
+      {
+        id: 'q5',
+        text: 'What\'s one skill you want to improve before your next competition?'
+      }
+    ],
+    answers: {
+      q1: 'I learned more from watching others compete than I expected.',
+      q2: 'Answering judges\' questions was nerve-wracking.',
+      q3: 'I would practise my answers more.',
+      q4: 'I was a team member and supported the lead.',
+      q5: 'I want to speak more confidently in public.'
+    }
+  },
+  {
+    insights: `**What went well:**
+      Your creativity stood out. The judges specifically noted your original approach.
+
+      **What to improve:**
+      Tighten the execution phase — great ideas deserve great delivery.
+
+      **What's next:**
+      Look for innovation-focused competitions where creativity is the primary criterion.`,
+    questions: [{
+        id: 'q1',
+        text: 'What did you learn from this competition that you didn\'t know before?'
+      },
+      {
+        id: 'q2',
+        text: 'What was the most challenging moment, and how did you handle it?'
+      },
+      {
+        id: 'q3',
+        text: 'What would you do differently if you could start over?'
+      },
+      {
+        id: 'q4',
+        text: 'How did you work with others, and what role did you play in the team?'
+      },
+      {
+        id: 'q5',
+        text: 'What\'s one skill you want to improve before your next competition?'
+      }
+    ],
+    answers: {
+      q1: 'I learned that ideas are cheap but execution is what wins.',
+      q2: 'We had 30 minutes to finish our prototype.',
+      q3: 'I would plan the execution phase better.',
+      q4: 'I was the ideas person on the team.',
+      q5: 'Execution discipline.'
+    }
+  }
+];
+
+// ============================================================
+//  SEED DEMO DATA (v5 — expanded with generated bulk)
 // ============================================================
 async function seedDemoData() {
   try {
@@ -432,20 +925,14 @@ async function seedDemoData() {
       console.log('Demo data already present — skipping seed.');
       return;
     }
-    console.log('Seeding comprehensive demo data...');
+    console.log('Seeding expanded demo data (v5)...');
 
     // ============================================================
-    //  USERS
+    //  HAND-CURATED USERS
     // ============================================================
 
-    // ---------- Students ----------
-    // Group 1: The three Afeef brothers (one family, different classes)
-    // Group 2: Classmates in 5 Alpha (varied PAJSK levels)
-    // Group 3: Students in 4 Beta (another class, for teacher breadth)
-    // Group 4: A brand-new student with zero activity (edge case)
-    const students = [
-      // --- The three brothers ---
-      {
+    // --- The three Afeef brothers ---
+    const curatedStudents = [{
         email: 'mujahid@eduminat.my',
         password: 'student123',
         role: 'student',
@@ -466,52 +953,13 @@ async function seedDemoData() {
         name: 'Musyrif Afeef',
         class: '2 Alpha'
       },
-
-      // --- 5 Alpha classmates (varied achievement) ---
       {
         email: 'aisyah@eduminat.my',
         password: 'student123',
         role: 'student',
         name: 'Nur Aisyah',
         class: '5 Alpha'
-      }, // top performer
-      {
-        email: 'danial@eduminat.my',
-        password: 'student123',
-        role: 'student',
-        name: 'Danial Haziq',
-        class: '5 Alpha'
-      }, // active, mixed
-      {
-        email: 'aminah@eduminat.my',
-        password: 'student123',
-        role: 'student',
-        name: 'Aminah Shahira',
-        class: '5 Alpha'
-      }, // international achiever
-      {
-        email: 'irfan@eduminat.my',
-        password: 'student123',
-        role: 'student',
-        name: 'Irfan Hakimi',
-        class: '5 Alpha'
-      }, // district-level only
-      {
-        email: 'liyana@eduminat.my',
-        password: 'student123',
-        role: 'student',
-        name: 'Liyana Zulkifli',
-        class: '5 Alpha'
-      }, // pending result
-      {
-        email: 'aminah@eduminat.my',
-        password: 'student123',
-        role: 'student',
-        name: 'Aminah Diyana',
-        class: '5 Alpha'
-      }, // just registered
-
-      // --- 4 Beta classmates ---
+      },
       {
         email: 'hafiz@eduminat.my',
         password: 'student123',
@@ -532,26 +980,60 @@ async function seedDemoData() {
         role: 'student',
         name: 'Zaki Iskandar',
         class: '4 Beta'
-      }, // no activity at all (edge case)
+      }
     ];
 
-    for (const s of students) await Users.put(s);
+    // --- Generated students (fill out the school) ---
+    const generatedStudents = [];
+    const usedEmails = new Set(curatedStudents.map(s => s.email));
+    let nameIndex = 0;
 
-    // ---------- Parents ----------
-    // Parent 1: the three Afeef brothers
+    const targetPerClass = {
+      '5 Alpha': 12,
+      '5 Beta': 10,
+      '4 Alpha': 9,
+      '4 Beta': 8,
+      '3 Alpha': 8,
+      '2 Alpha': 6,
+      '2 Beta': 5,
+      '1 Alpha': 4
+    };
+
+    for (const cls of CLASSES) {
+      const target = targetPerClass[cls] || 5;
+      let added = 0;
+      while (added < target) {
+        // Alternate gender pool
+        const pool = rng() < 0.5 ? MALE_NAMES : FEMALE_NAMES;
+        const fullName = pick(pool);
+        const slug = fullName.toLowerCase().replace(/\s+/g, '') + (nameIndex++);
+        const email = `${slug}@eduminat.my`;
+
+        if (usedEmails.has(email)) continue;
+        usedEmails.add(email);
+
+        generatedStudents.push({
+          email,
+          password: 'student123',
+          role: 'student',
+          name: fullName,
+          class: cls
+        });
+        added++;
+      }
+    }
+
+    const allStudents = [...curatedStudents, ...generatedStudents];
+    for (const s of allStudents) await Users.put(s);
+
+    // --- Parents ---
     await Users.put({
       email: 'parent@eduminat.my',
       password: 'parent123',
       role: 'parent',
       name: 'Puan Nurul Izzah',
-      childEmails: [
-        'mujahid@eduminat.my',
-        'mursyid@eduminat.my',
-        'musyrif@eduminat.my'
-      ]
+      childEmails: ['mujahid@eduminat.my', 'mursyid@eduminat.my', 'musyrif@eduminat.my']
     });
-
-    // Parent 2: single child (Aisyah) — edge case for single-child parent
     await Users.put({
       email: 'parent2@eduminat.my',
       password: 'parent123',
@@ -559,20 +1041,15 @@ async function seedDemoData() {
       name: 'Encik Rosli',
       childEmails: ['aisyah@eduminat.my']
     });
-
-    // Parent 3: two kids in different classes
     await Users.put({
       email: 'parent3@eduminat.my',
       password: 'parent123',
       role: 'parent',
       name: 'Puan Hasnah',
-      childEmails: [
-        'hafiz@eduminat.my',
-        'sarah@eduminat.my'
-      ]
+      childEmails: ['hafiz@eduminat.my', 'sarah@eduminat.my']
     });
 
-    // ---------- Teachers ----------
+    // --- Teachers, Organizers, KPM ---
     await Users.put({
       email: 'teacher@eduminat.my',
       password: 'teacher123',
@@ -580,7 +1057,6 @@ async function seedDemoData() {
       name: 'Cikgu Siti',
       class: '5 Alpha'
     });
-
     await Users.put({
       email: 'teacher2@eduminat.my',
       password: 'teacher123',
@@ -588,23 +1064,54 @@ async function seedDemoData() {
       name: 'Cikgu Ahmad',
       class: '4 Beta'
     });
-
-    // ---------- Organizers ----------
     await Users.put({
       email: 'organizer@eduminat.my',
       password: 'organizer123',
       role: 'organizer',
-      name: 'FutureTech Academy'
+      name: 'FutureTech Academy',
+      letterhead: {
+        address: 'No. 12, Jalan Teknologi 3/5\nTaman Sains Selangor\n47810 Petaling Jaya, Selangor',
+        contactPerson: 'Encik Faizal bin Ahmad',
+        contactPhone: '03-7890 1234',
+        contactEmail: 'admin@futuretech.com.my'
+      }
     });
-
     await Users.put({
       email: 'organizer2@eduminat.my',
       password: 'organizer123',
       role: 'organizer',
-      name: 'ArtsHub Malaysia'
+      name: 'ArtsHub Malaysia',
+        letterhead: {
+          address: 'Unit 8-3, Menara Creative\nJalan Ampang\n50450 Kuala Lumpur',
+          contactPerson: 'Puan Melissa Tan',
+          contactPhone: '03-2345 6789',
+          contactEmail: 'hello@artshub.my'
+        }
     });
-
-    // ---------- KPM ----------
+    await Users.put({
+      email: 'organizer3@eduminat.my',
+      password: 'organizer123',
+      role: 'organizer',
+      name: 'EduSports Alliance',
+      letterhead: {
+        address: 'Lot 5, Jalan Sukan 2\nTaman Perindustrian Sukan\n43300 Seri Kembangan, Selangor',
+        contactPerson: 'Encik Hafiz bin Karim',
+        contactPhone: '03-8765 4321',
+        contactEmail: 'contact@edusports.com.my'
+      }
+    });
+    await Users.put({
+      email: 'brightday@eduminat.my',
+      password: 'organizer123',
+      role: 'organizer',
+      name: 'BrightDay Sports Club',
+      letterhead: {
+        address: 'Lot 7, Jalan Sukan Perdana\nTaman Sukan Negara\n57000 Kuala Lumpur',
+        contactPerson: 'Encik Azman bin Yusof',
+        contactPhone: '03-9055 1234',
+        contactEmail: 'hello@brightday.my'
+      }
+    });
     await Users.put({
       email: 'kpm@eduminat.my',
       password: 'kpm123',
@@ -613,207 +1120,421 @@ async function seedDemoData() {
     });
 
     // ============================================================
-    //  COMPETITIONS — cover all statuses, levels, engagement types
+    //  HAND-CURATED COMPETITIONS
+    //  Cover all levels, categories, engagement types, statuses
     // ============================================================
-    const seedComps = [
-      // --- APPROVED (students can register) ---
+    const curatedComps = [
+      // ---------- STEM · National · Ranked ----------
       {
         name: 'National Coding Challenge',
         organizerEmail: 'organizer@eduminat.my',
         organizerName: 'FutureTech Academy',
         category: 'STEM',
-        description: 'National coding competition (online, live, ranked).',
-        date: '2026-06-12',
-        status: 'approved',
+        description: 'A national-level coding competition where students solve algorithmic problems under time pressure. Online, ranked, and live-streamed.',
+        date: '2026-02-20',
+        status: 'completed',
         level: 'kebangsaan',
         mode: 'dalam_talian',
         engagementType: 1,
-        hasRanking: true
+        hasRanking: true,
+        url: 'https://www.code.org/learn',
+        official: {
+          dateStart: '2026-02-20',
+          dateEnd: '2026-02-21',
+          year: 2026
+        }
       },
       {
         name: 'Robotics Championship',
         organizerEmail: 'organizer@eduminat.my',
         organizerName: 'FutureTech Academy',
         category: 'STEM',
-        description: 'National robotics tournament with live ranking.',
+        description: 'A national robotics tournament where teams design, build, and battle autonomous robots in a live arena.',
         date: '2026-07-05',
         status: 'approved',
         level: 'kebangsaan',
         mode: 'fizikal',
         engagementType: 1,
-        hasRanking: true
+        hasRanking: true,
+        url: 'https://www.firstinspires.org/robotics/frc',
+        official: {
+          dateStart: '2026-07-05',
+          dateEnd: '2026-07-06',
+          year: 2026
+        }
       },
+
+      // ---------- STEM · International · Ranked ----------
       {
         name: 'International Math Olympiad',
         organizerEmail: 'organizer@eduminat.my',
         organizerName: 'FutureTech Academy',
         category: 'STEM',
-        description: 'Top-tier international olympiad.',
+        description: 'The world\'s most prestigious mathematics competition for secondary school students, held annually.',
         date: '2026-09-20',
         status: 'approved',
         level: 'antarabangsa',
         mode: 'fizikal',
         engagementType: 1,
-        hasRanking: true
+        hasRanking: true,
+        url: 'https://www.imo-official.org',
+        official: {
+          dateStart: '2026-09-20',
+          dateEnd: '2026-09-27',
+          year: 2026
+        }
       },
+
+      // ---------- STEM · State · Ranked ----------
       {
-        name: 'Innovation Expo',
+        name: 'Selangor Science & Innovation Fair',
         organizerEmail: 'organizer@eduminat.my',
         organizerName: 'FutureTech Academy',
         category: 'STEM',
-        description: 'State-level innovation showcase (no ranking).',
-        date: '2026-06-28',
-        status: 'approved',
+        description: 'State-level science fair showcasing innovation projects from secondary schools across Selangor.',
+        date: '2026-05-15',
+        status: 'completed',
         level: 'negeri',
         mode: 'fizikal',
-        engagementType: 2,
-        hasRanking: false
+        engagementType: 1,
+        hasRanking: true,
+        official: {
+          dateStart: '2026-05-15',
+          dateEnd: '2026-05-16',
+          year: 2026
+        }
       },
+
+      // ---------- STEM · District · Ranked ----------
       {
-        name: 'District Science Fair',
+        name: 'District Science Quiz',
         organizerEmail: 'organizer@eduminat.my',
         organizerName: 'FutureTech Academy',
         category: 'STEM',
-        description: 'District-level science fair.',
-        date: '2026-05-15',
-        status: 'approved',
+        description: 'A quick-fire science quiz for secondary students across the district, testing general knowledge and reasoning.',
+        date: '2026-03-10',
+        status: 'completed',
         level: 'zon_daerah',
         mode: 'fizikal',
         engagementType: 1,
-        hasRanking: true
+        hasRanking: true,
+        official: {
+          dateStart: '2026-03-10',
+          dateEnd: '2026-03-10',
+          year: 2026
+        }
       },
+
+      // ---------- Language · National · Ranked ----------
+      {
+        name: 'National Public Speaking Championship',
+        organizerEmail: 'organizer2@eduminat.my',
+        organizerName: 'ArtsHub Malaysia',
+        category: 'Language',
+        description: 'Students deliver 5-minute speeches on national topics before a panel of judges. Judged on content, delivery, and structure.',
+        date: '2026-04-18',
+        status: 'completed',
+        level: 'kebangsaan',
+        mode: 'fizikal',
+        engagementType: 1,
+        hasRanking: true,
+        official: {
+          dateStart: '2026-04-18',
+          dateEnd: '2026-04-18',
+          year: 2026
+        }
+      },
+
+      // ---------- Language · State · Ranked ----------
+      {
+        name: 'Johor Inter-School Debate Cup',
+        organizerEmail: 'organizer2@eduminat.my',
+        organizerName: 'ArtsHub Malaysia',
+        category: 'Language',
+        description: 'A state-level debate tournament in the British Parliamentary format. Three preliminary rounds followed by knockout stages.',
+        date: '2026-06-08',
+        status: 'approved',
+        level: 'negeri',
+        mode: 'fizikal',
+        engagementType: 1,
+        hasRanking: true,
+        official: {
+          dateStart: '2026-06-08',
+          dateEnd: '2026-06-09',
+          year: 2026
+        }
+      },
+
+      // ---------- Language · National · Non-ranked ----------
+      {
+        name: 'Malaysian Young Writers Workshop',
+        organizerEmail: 'organizer2@eduminat.my',
+        organizerName: 'ArtsHub Malaysia',
+        category: 'Language',
+        description: 'A 3-day creative writing workshop with published Malaysian authors. No competition — participation and completion recognised.',
+        date: '2026-08-12',
+        status: 'approved',
+        level: 'kebangsaan',
+        mode: 'fizikal',
+        engagementType: 2,
+        hasRanking: false,
+        official: {
+          dateStart: '2026-08-12',
+          dateEnd: '2026-08-14',
+          year: 2026
+        }
+      },
+
+      // ---------- Arts · National · Ranked ----------
       {
         name: 'Digital Arts Showcase',
         organizerEmail: 'organizer2@eduminat.my',
         organizerName: 'ArtsHub Malaysia',
         category: 'Arts',
-        description: 'National online digital art competition.',
-        date: '2026-08-10',
+        description: 'An online national digital art competition. Students submit original digital artwork around a yearly theme.',
+        date: '2026-10-01',
         status: 'approved',
         level: 'kebangsaan',
         mode: 'dalam_talian',
         engagementType: 1,
-        hasRanking: true
+        hasRanking: true,
+        official: {
+          dateStart: '2026-10-01',
+          dateEnd: '2026-10-31',
+          year: 2026
+        }
       },
-      {
-        name: 'Public Speaking Contest',
-        organizerEmail: 'organizer2@eduminat.my',
-        organizerName: 'ArtsHub Malaysia',
-        category: 'Language',
-        description: 'State-level public speaking.',
-        date: '2026-04-22',
-        status: 'approved',
-        level: 'negeri',
-        mode: 'fizikal',
-        engagementType: 1,
-        hasRanking: true
-      },
+
+      // ---------- Arts · Division · Ranked (Sabah/Sarawak) ----------
       {
         name: 'Sabah Heritage Video Contest',
         organizerEmail: 'organizer2@eduminat.my',
         organizerName: 'ArtsHub Malaysia',
         category: 'Arts',
-        description: 'Division-level video contest (Sabah/Sarawak).',
-        date: '2026-03-05',
-        status: 'approved',
+        description: 'A division-level video competition celebrating Sabah\'s cultural heritage. Submissions judged by local filmmakers.',
+        date: '2026-03-15',
+        status: 'completed',
         level: 'bahagian',
         mode: 'dalam_talian',
         engagementType: 1,
-        hasRanking: true
+        hasRanking: true,
+        official: {
+          dateStart: '2026-03-15',
+          dateEnd: '2026-03-20',
+          year: 2026
+        }
       },
 
-      // --- PENDING (waiting for KPM approval) ---
-      {
-        name: 'Creative Arts Showcase 2026',
-        organizerEmail: 'organizer@eduminat.my',
-        organizerName: 'FutureTech Academy',
-        category: 'Arts',
-        description: 'Digital and traditional art competition (pending KPM).',
-        date: '2026-11-01',
-        status: 'pending',
-        level: 'kebangsaan',
-        mode: 'dalam_talian',
-        engagementType: 1,
-        hasRanking: true
-      },
-      {
-        name: 'Startup Pitch Competition',
-        organizerEmail: 'organizer2@eduminat.my',
-        organizerName: 'ArtsHub Malaysia',
-        category: 'STEM',
-        description: 'University-level startup pitching (pending).',
-        date: '2026-12-15',
-        status: 'pending',
-        level: 'negeri',
-        mode: 'fizikal',
-        engagementType: 1,
-        hasRanking: true
-      },
-
-      // --- COMPLETED (report already submitted to KPM) ---
+      // ---------- Sports · National · Non-ranked ----------
       {
         name: 'Larian Merdeka 2026',
-        organizerEmail: 'organizer@eduminat.my',
-        organizerName: 'FutureTech Academy',
+        organizerEmail: 'brightday@eduminat.my',
+        organizerName: 'BrightDay Sports Club',
         category: 'Sports',
-        description: 'National independence-day run (completed).',
+        description: 'A national independence-day fun run. All finishers receive a participation certificate. Non-competitive.',
         date: '2026-08-31',
-        status: 'completed',
+        status: 'approved',
         level: 'kebangsaan',
         mode: 'fizikal',
         engagementType: 2,
-        hasRanking: false
+        hasRanking: false,
+        official: {
+          dateStart: '2026-08-31',
+          dateEnd: '2026-08-31',
+          year: 2026
+        }
       },
 
-      // --- REJECTED (edge case: KPM turned it down) ---
+      // ---------- Sports · State · Ranked ----------
       {
-        name: 'Unauthorized Bootcamp',
+        name: 'Kuala Lumpur Badminton Open',
+        organizerEmail: 'organizer3@eduminat.my',
+        organizerName: 'EduSports Alliance',
+        category: 'Sports',
+        description: 'A state-level badminton tournament for secondary school students. Singles and doubles categories.',
+        date: '2026-05-25',
+        status: 'completed',
+        level: 'negeri',
+        mode: 'fizikal',
+        engagementType: 1,
+        hasRanking: true,
+        official: {
+          dateStart: '2026-05-25',
+          dateEnd: '2026-05-27',
+          year: 2026
+        }
+      },
+
+      // ---------- Sports · District · Non-ranked ----------
+      {
+        name: 'District Chess Carnival',
+        organizerEmail: 'organizer3@eduminat.my',
+        organizerName: 'EduSports Alliance',
+        category: 'Sports',
+        description: 'A district-level chess carnival open to all secondary students. Played in a friendly swiss-system format.',
+        date: '2026-11-08',
+        status: 'approved',
+        level: 'zon_daerah',
+        mode: 'fizikal',
+        engagementType: 2,
+        hasRanking: false,
+        official: {
+          dateStart: '2026-11-08',
+          dateEnd: '2026-11-08',
+          year: 2026
+        }
+      },
+
+      // ---------- Pending approval (KPM queue demo) ----------
+      {
+        name: 'National Entrepreneurship Pitch 2026',
+        organizerEmail: 'organizer@eduminat.my',
+        organizerName: 'FutureTech Academy',
+        category: 'STEM',
+        description: 'Students pitch startup ideas to a panel of Malaysian entrepreneurs. Judged on viability, creativity, and presentation.',
+        date: '2026-12-05',
+        status: 'pending',
+        level: 'kebangsaan',
+        mode: 'fizikal',
+        engagementType: 1,
+        hasRanking: true,
+        official: {
+          dateStart: '2026-12-05',
+          dateEnd: '2026-12-06',
+          year: 2026
+        }
+      },
+      {
+        name: 'ASEAN Youth Film Festival',
         organizerEmail: 'organizer2@eduminat.my',
         organizerName: 'ArtsHub Malaysia',
+        category: 'Arts',
+        description: 'A regional film festival for youth filmmakers across ASEAN. Short films under 10 minutes.',
+        date: '2026-12-15',
+        status: 'pending',
+        level: 'antarabangsa',
+        mode: 'dalam_talian',
+        engagementType: 1,
+        hasRanking: true,
+        official: {
+          dateStart: '2026-12-15',
+          dateEnd: '2026-12-20',
+          year: 2026
+        }
+      },
+
+      // ---------- Rejected (edge case) ----------
+      {
+        name: 'Unauthorized Tech Bootcamp',
+        organizerEmail: 'organizer3@eduminat.my',
+        organizerName: 'EduSports Alliance',
         category: 'STEM',
-        description: 'Rejected by KPM due to missing documentation.',
-        date: '2026-10-01',
+        description: 'Rejected by KPM due to incomplete documentation and unverified organizer credentials.',
+        date: '2026-11-20',
         status: 'rejected',
         level: 'negeri',
         mode: 'fizikal',
         engagementType: 1,
-        hasRanking: true
+        hasRanking: true,
+        official: {
+          dateStart: '2026-11-20',
+          dateEnd: '2026-11-22',
+          year: 2026
+        }
       }
     ];
 
-    for (const c of seedComps) {
+    // ============================================================
+    //  GENERATED COMPETITIONS (~40 more)
+    // ============================================================
+    const generatedComps = [];
+    const startDates = [
+      new Date('2026-01-15'), new Date('2026-02-10'), new Date('2026-03-05'),
+      new Date('2026-04-20'), new Date('2026-05-15'), new Date('2026-06-10'),
+      new Date('2026-07-20'), new Date('2026-08-15'), new Date('2026-09-10'),
+      new Date('2026-10-05'), new Date('2026-11-12'), new Date('2026-12-08')
+    ];
+
+    for (let i = 0; i < 40; i++) {
+      const level = weightedPick(COMP_LEVELS);
+      const category = pick(COMP_CATEGORIES);
+      const subject = pick(COMP_SUBJECTS[category]);
+      const suffix = pick(COMP_SUFFIXES);
+      const organizer = pick(ORGANIZER_POOL);
+      const date = startDates[Math.floor(rng() * startDates.length)];
+      const dayOffset = Math.floor(rng() * 25);
+      const compDate = new Date(date.getTime() + dayOffset * 24 * 3600 * 1000);
+
+      const name = `${level.prefix} ${subject} ${suffix} ${compDate.getFullYear()}`;
+
+      // Status: mostly approved, some pending/completed/rejected
+      let status;
+      const roll = rng();
+      if (roll < 0.65) status = 'approved';
+      else if (roll < 0.80) status = 'pending';
+      else if (roll < 0.95) status = 'completed';
+      else status = 'rejected';
+
+      // Engagement type: mostly Type I, occasionally II or III
+      const engRoll = rng();
+      const engagementType = engRoll < 0.7 ? 1 : (engRoll < 0.9 ? 2 : 3);
+      const hasRanking = engagementType === 1;
+
+      // 40% of generated competitions have a URL
+      const hasUrl = rng() < 0.4;
+
+      generatedComps.push({
+        name,
+        organizerEmail: organizer.email,
+        organizerName: organizer.name,
+        category,
+        description: `${level.prefix} ${subject.toLowerCase()} competition organized by ${organizer.name}.`,
+        date: compDate.toISOString().slice(0, 10),
+        status,
+        level: level.key,
+        mode: rng() < 0.5 ? 'fizikal' : 'dalam_talian',
+        engagementType,
+        hasRanking,
+        url: hasUrl ? `https://example.com/${name.toLowerCase().replace(/\s+/g, '-')}` : '',
+        official: {
+          dateStart: compDate.toISOString().slice(0, 10),
+          dateEnd: new Date(compDate.getTime() + Math.floor(rng() * 30) * 24 * 3600 * 1000).toISOString().slice(0, 10),
+          year: compDate.getFullYear()
+        }
+      });
+    }
+
+    const allCompsToAdd = [...curatedComps, ...generatedComps];
+    for (const c of allCompsToAdd) {
       c.participationScore = getParticipationScore(c.level, c.engagementType);
       c.maxAchievementScore = c.hasRanking ? getAchievementScore(c.level, 'johan') : 0;
       await Competitions.add(c);
     }
 
-    // ============================================================
-    //  REGISTRATIONS & MARKS — cover every result type
-    // ============================================================
+    // Reload from DB to get IDs
     const allComps = await Competitions.all();
-    const find = (name) => allComps.find(c => c.name === name);
+    const approvedComps = allComps.filter(c => c.status === 'approved' || c.status === 'completed');
 
+    const find = (name) => allComps.find(c => c.name === name);
     const coding = find('National Coding Challenge');
     const robotics = find('Robotics Championship');
     const imo = find('International Math Olympiad');
-    const innovation = find('Innovation Expo');
-    const district = find('District Science Fair');
-    const arts = find('Digital Arts Showcase');
-    const speaking = find('Public Speaking Contest');
-    const heritage = find('Sabah Heritage Video Contest');
     const larian = find('Larian Merdeka 2026');
 
-    // ----- Helper to register + award in one shot -----
+    // ============================================================
+    //  REGISTRATION + MARK HELPER
+    // ============================================================
     async function register(studentEmail, comp, {
       status = 'registered',
-      result = null
+      result = null,
+      daysAgo = 30
     } = {}) {
       if (!comp) return;
       const entry = {
         studentEmail,
         competitionId: comp.id,
         status,
-        registeredAt: Date.now() - 30 * 24 * 3600 * 1000,
+        registeredAt: Date.now() - daysAgo * 24 * 3600 * 1000,
         result,
         participationScore: 0,
         achievementScore: 0,
@@ -822,7 +1543,7 @@ async function seedDemoData() {
 
       if (status === 'completed' && result) {
         const scores = computeRegistrationPajsk(comp, result);
-        entry.completedAt = Date.now() - 5 * 24 * 3600 * 1000;
+        entry.completedAt = Date.now() - Math.max(1, daysAgo - 10) * 24 * 3600 * 1000;
         entry.participationScore = scores.participationScore;
         entry.achievementScore = scores.achievementScore;
         entry.totalPajsk = scores.totalPajsk;
@@ -847,46 +1568,23 @@ async function seedDemoData() {
     }
 
     // ============================================================
-    //  Mujahid (5A) — active + one completed (Ketiga, national)
+    //  HAND-CURATED REGISTRATIONS (kept from previous version)
     // ============================================================
     await register('mujahid@eduminat.my', coding, {
-      status: 'registered'
-    });
-    await register('mujahid@eduminat.my', arts, {
       status: 'registered'
     });
     await register('mujahid@eduminat.my', robotics, {
       status: 'completed',
       result: 'ketiga'
     });
-
-    // ============================================================
-    //  Mursyid (4B) — completed (participation), one active
-    // ============================================================
     await register('mursyid@eduminat.my', coding, {
       status: 'registered'
     });
-    await register('mursyid@eduminat.my', innovation, {
-      status: 'completed',
-      result: 'penyertaan'
-    });
-
-    // ============================================================
-    //  Musyrif (2A) — over-achiever (Naib Johan, national)
-    // ============================================================
     await register('musyrif@eduminat.my', coding, {
       status: 'completed',
       result: 'naib_johan'
     });
-
-    // ============================================================
-    //  Aisyah (5A) — top performer (Johan ×2, International)
-    // ============================================================
     await register('aisyah@eduminat.my', robotics, {
-      status: 'completed',
-      result: 'johan'
-    });
-    await register('aisyah@eduminat.my', speaking, {
       status: 'completed',
       result: 'johan'
     });
@@ -894,90 +1592,104 @@ async function seedDemoData() {
       status: 'completed',
       result: 'keempat'
     });
-
-    // ============================================================
-    //  Danial (5A) — mixed (Johann district, Ketiga state)
-    // ============================================================
-    await register('danial@eduminat.my', coding, {
-      status: 'registered'
-    });
-    await register('danial@eduminat.my', district, {
-      status: 'completed',
-      result: 'johan'
-    });
-    await register('danial@eduminat.my', heritage, {
-      status: 'completed',
-      result: 'ketiga'
-    });
-
-    // ============================================================
-    //  Fatimah (5A) — international achiever (5th place)
-    // ============================================================
-    await register('fatimah@eduminat.my', imo, {
-      status: 'completed',
-      result: 'kelima'
-    });
-    await register('fatimah@eduminat.my', arts, {
-      status: 'registered'
-    });
-
-    // ============================================================
-    //  Irfan (5A) — district-level only
-    // ============================================================
-    await register('irfan@eduminat.my', district, {
-      status: 'completed',
-      result: 'keempat'
-    });
-    await register('irfan@eduminat.my', larian, {
-      status: 'completed',
-      result: 'penyertaan'
-    });
-
-    // ============================================================
-    //  Liyana (5A) — registered, awaiting result (edge case)
-    // ============================================================
-    await register('liyana@eduminat.my', coding, {
-      status: 'registered'
-    });
-    await register('liyana@eduminat.my', arts, {
-      status: 'registered'
-    });
-
-    // ============================================================
-    //  Aminah (5A) — just registered, no results yet
-    // ============================================================
-    await register('aminah@eduminat.my', coding, {
-      status: 'registered'
-    });
-
-    // ============================================================
-    //  Hafiz (4B) — national participation, state 3rd
-    // ============================================================
     await register('hafiz@eduminat.my', larian, {
       status: 'completed',
       result: 'penyertaan'
     });
-    await register('hafiz@eduminat.my', speaking, {
-      status: 'completed',
-      result: 'ketiga'
-    });
-
-    // ============================================================
-    //  Sarah (4B) — arts lover, no results yet
-    // ============================================================
-    await register('sarah@eduminat.my', arts, {
+    await register('sarah@eduminat.my', coding, {
       status: 'registered'
     });
 
     // ============================================================
-    //  Zaki (4B) — no activity at all (edge case: empty dashboard)
-    //  (intentionally no registrations)
+    //  GENERATED REGISTRATIONS (~300 more)
+    // ============================================================
+    const RESULT_POOL = [{
+        result: 'johan',
+        weight: 12
+      },
+      {
+        result: 'naib_johan',
+        weight: 12
+      },
+      {
+        result: 'ketiga',
+        weight: 14
+      },
+      {
+        result: 'keempat',
+        weight: 8
+      },
+      {
+        result: 'kelima',
+        weight: 6
+      },
+      {
+        result: 'penyertaan',
+        weight: 48
+      }
+    ];
+
+    // Each student joins 3-6 approved competitions (excluding Zaki)
+    for (const student of allStudents) {
+      if (student.email === 'zaki@eduminat.my') continue;
+      if (student.email.startsWith('mujahid') || student.email.startsWith('mursyid') ||
+        student.email.startsWith('musyrif') || student.email.startsWith('aisyah') ||
+        student.email.startsWith('hafiz') || student.email.startsWith('sarah')) continue;
+
+      const joinCount = 3 + Math.floor(rng() * 4); // 3-6
+      const pickedComps = pickN(approvedComps, joinCount);
+
+      for (const comp of pickedComps) {
+        // Status: mostly completed, some registered
+        const status = rng() < 0.75 ? 'completed' : 'registered';
+        const result = status === 'completed' ?
+          weightedPick(RESULT_POOL).result :
+          null;
+
+        await register(student.email, comp, {
+          status,
+          result,
+          daysAgo: 5 + Math.floor(rng() * 60)
+        });
+      }
+    }
 
     // ============================================================
-    //  REPORTS — one already acknowledged (for KPM letter demo)
+    //  REFLECTIONS — canned AI output (no API key needed)
     // ============================================================
-    const completedCount = await Registrations.byCompetition(robotics.id);
-    const completedRobotics = completedCount.filter(r => r.status === 'completed');
+    const reflectionStudents = [
+      'aisyah@eduminat.my', 'hafiz@eduminat.my', 'mursyid@eduminat.my',
+      'musyrif@eduminat.my', 'sarah@eduminat.my', 'mujahid@eduminat.my'
+    ];
+
+    for (let i = 0; i < reflectionStudents.length; i++) {
+      const studentEmail = reflectionStudents[i];
+      const studentRegs = await Registrations.byStudent(studentEmail);
+      const completedRegs = studentRegs.filter(r => r.status === 'completed');
+      if (completedRegs.length === 0) continue;
+
+      const reg = completedRegs[0];
+      const comp = allComps.find(c => c.id === reg.competitionId);
+      if (!comp) continue;
+
+      const canned = CANNED_REFLECTIONS[i % CANNED_REFLECTIONS.length];
+      await Reflections.add({
+        studentEmail,
+        competitionId: comp.id,
+        competitionName: comp.name,
+        answers: canned.answers,
+        questions: canned.questions,
+        insights: canned.insights,
+        aiEnabled: false, // ← shows demo-mode badge in the UI
+        createdAt: Date.now() - (10 + i) * 24 * 3600 * 1000
+      });
+    }
+
+    // ============================================================
+    //  REPORTS
+    // ============================================================
+    const completedRobotics = (await Registrations.byCompetition(robotics.id))
+      .filter(r => r.status === 'completed');
 
     await Reports.add({
       competitionId: robotics.id,
@@ -990,15 +1702,14 @@ async function seedDemoData() {
       submittedAt: Date.now() - 2 * 24 * 3600 * 1000
     });
 
-    // One already acknowledged (KPM can download letter immediately)
     const completedLarian = (await Registrations.byCompetition(larian.id))
       .filter(r => r.status === 'completed');
 
     await Reports.add({
       competitionId: larian.id,
       competitionName: larian.name,
-      organizerEmail: 'organizer@eduminat.my',
-      organizerName: 'FutureTech Academy',
+      organizerEmail: 'brightday@eduminat.my',
+      organizerName: 'BrightDay Sports Club',
       participants: completedLarian.length,
       totalPajskAwarded: completedLarian.reduce((s, r) => s + (r.totalPajsk || 0), 0),
       status: 'acknowledged',
@@ -1006,27 +1717,17 @@ async function seedDemoData() {
       acknowledgedAt: Date.now() - 8 * 24 * 3600 * 1000
     });
 
-    console.log(`✅ Comprehensive demo seeded: ${students.length} students, ${seedComps.length} competitions, 3 parents, 2 teachers, 2 organizers.`);
+    // Seed the KPM letterhead with defaults
+    const existingLetterhead = await Settings.get('kpm_letterhead');
+    if (!existingLetterhead) {
+      await Settings.set('kpm_letterhead', DEFAULT_KPM_LETTERHEAD);
+    }
+
+    const totalComps = allComps.length;
+    console.log(`✅ Demo seeded: ${allStudents.length} students, ${totalComps} competitions, ${CLASSES.length} classes, 3 parents, 2 teachers, 3 organizers.`);
   } catch (err) {
     console.error('Seed failed:', err);
   }
-}
-
-// ---------- i18n-aware labels (falls back to BM if i18n.js not loaded) ----------
-function levelLabel(key) {
-  return window.I18N ? window.I18N.tLevel(key) : (KPM_SCORING.levelLabels[key] || key);
-}
-
-function engagementLabel(type) {
-  return window.I18N ? window.I18N.tEngagement(type) : (KPM_SCORING.engagementLabels[type] || type);
-}
-
-function resultLabel(key) {
-  return window.I18N ? window.I18N.tResult(key) : (KPM_SCORING.resultLabels[key] || key);
-}
-
-function statusLabel(key) {
-  return window.I18N ? window.I18N.tStatus(key) : key;
 }
 
 // ---------- i18n-aware label helpers (fallback to BM) ----------
@@ -1127,4 +1828,14 @@ window.DB = {
 
   // manual mark
   addManualMark,
+
+  // refections
+  Reflections,
+  Settings,
+// Convenience wrappers
+getKpmLetterhead: async () => (await Settings.get('kpm_letterhead'))?.value || DEFAULT_KPM_LETTERHEAD,
+  saveKpmLetterhead: async (v) => Settings.set('kpm_letterhead', {
+    ...DEFAULT_KPM_LETTERHEAD,
+    ...v
+  })
 };

@@ -23,6 +23,19 @@
             <nav class="nav">
                 <div class="nav-item active" data-tab="dashboard"><i class="fas fa-calendar-alt"></i> <span data-i18n="nav.my_events"></span></div>
                 <div class="nav-item" data-tab="new"><i class="fas fa-plus-circle"></i> <span data-i18n="nav.submit_comp"></span></div>
+                <div class="nav-item" onclick="openAiSettings()"><i class="fas fa-robot"></i>
+                    <span data-i18n="reflect.ai_settings"></span>
+                    <span id="aiKeyStatus" style="
+                            margin-left:auto;
+                            font-size:0.7rem;
+                            font-weight:700;
+                            padding:2px 6px;
+                            border-radius:10px;
+                            background:#fff2e0;
+                            color:#b45f06;
+                        ">!</span>
+                </div>
+                <div class="nav-item" onclick="openOrganizerProfile()"><i class="fas fa-building"></i> <span data-i18n="nav.organizer_settings"></span></div>
                 <div class="nav-item" onclick="DB.resetDemo()"><i class="fas fa-rotate-left"></i> <span data-i18n="nav.reset"></span></div>
                 <div class="nav-item logout" onclick="DB.logout()"><i class="fas fa-sign-out-alt"></i> <span data-i18n="nav.logout"></span></div>
             </nav>
@@ -71,6 +84,9 @@
     <script src="scripts/xlsx.full.min.js"></script>
     <script src="scripts/i18n.js"></script>
     <script src="scripts/db.js"></script>
+    <script src="scripts/table-tools.js"></script>
+    <script src="scripts/ai.js"></script>
+    <script src="scripts/ai-settings.js"></script>
     <script src="scripts/tour.js"></script>
     <script>
         let user = null;
@@ -138,7 +154,10 @@
                     <i class="fas fa-exclamation-triangle"></i>${I18N.t('common.error')}: ${err.message}
                     </div></div>`;
             }
-        
+
+            // Re-apply i18n after rendering — needed for <option data-i18n> elements
+            I18N.applyI18n();
+
             // After the main content is inserted into #main:
             if (typeof renderTour === 'function') renderTour();
         }
@@ -167,103 +186,323 @@
             </button>
           </div>
 
-          ${comps.length === 0
-            ? emptyState(I18N.t('org.no_events'))
-            : `<table>
-                <tr>
-                  <th>${I18N.t('th.name')}</th>
-                  <th>${I18N.t('th.level')}</th>
-                  <th>${I18N.t('th.date')}</th>
-                  <th>${I18N.t('th.status')}</th>
-                  <th></th>
-                </tr>
-                ${comps.map(c => `
-                  <tr>
-                    <td><strong>${c.name}</strong><br>
-                      <span class="text-muted" style="font-size:0.8rem;">${c.category}</span>
-                    </td>
-                    <td>${DB.levelLabel(c.level)}</td>
-                    <td>${c.date}</td>
-                    <td>${statusBadge(c.status)}</td>
-                    <td>
-                      <button class="btn btn-outline btn-sm" data-manage="${c.id}">
-                        <i class="fas fa-cog"></i> ${I18N.t('common.manage')}
-                      </button>
-                    </td>
-                  </tr>
-                `).join('')}
-              </table>`}
+            ${comps.length === 0
+                ? emptyState(I18N.t('org.no_events'))
+                : `
+                <div class="tt-toolbar">
+                    <div class="tt-search">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="orgEventsSearch" placeholder="${I18N.t('common.search_comps')}">
+                    </div>
+                    <select id="orgEventsStatus">
+                    <option value="">${I18N.t('common.all_statuses')}</option>
+                    <option value="${I18N.t('status.approved')}">${I18N.t('status.approved')}</option>
+                    <option value="${I18N.t('status.pending')}">${I18N.t('status.pending')}</option>
+                    <option value="${I18N.t('status.rejected')}">${I18N.t('status.rejected')}</option>
+                    <option value="${I18N.t('status.completed')}">${I18N.t('status.completed')}</option>
+                    </select>
+                </div>
+
+                <table id="orgEventsTable">
+                    <tr>
+                    <th>${I18N.t('th.name')}</th>
+                    <th>${I18N.t('th.level')}</th>
+                    <th>${I18N.t('th.date')}</th>
+                    <th>${I18N.t('th.status')}</th>
+                    <th></th>
+                    </tr>
+                    ${comps.map(c => `
+                    <tr>
+                        <td><strong>${c.name}</strong><br>
+                        <span class="text-muted" style="font-size:0.8rem;">${c.category}</span>
+                        </td>
+                        <td>${DB.levelLabel(c.level)}</td>
+                        <td>${c.date}</td>
+                        <td>${statusBadge(c.status)}</td>
+                        <td>
+                        <button class="btn btn-outline btn-sm" data-manage="${c.id}">
+                            <i class="fas fa-cog"></i> ${I18N.t('common.manage')}
+                        </button>
+                        </td>
+                    </tr>
+                    `).join('')}
+                </table>
+            `}
         </div>
       `;
         }
 
         async function renderNewForm() {
-            return `
-        <div class="header"><h1>${I18N.t('org.new_comp_title')}</h1></div>
+                return `
+            <div class="header"><h1>${I18N.t('org.new_comp_title')}</h1></div>
 
-        <div class="card">
-          <form id="newCompForm">
-            <div class="form-group">
-              <label>${I18N.t('org.comp_name')}</label>
-              <input type="text" id="compName" required>
+            <div class="card">
+            <form id="newCompForm">
+                <div class="form-group">
+                <label>${I18N.t('org.comp_name')}</label>
+                <input type="text" id="compName" required>
+                </div>
+
+                <div class="grid-2">
+                <div class="form-group">
+                    <label>${I18N.t('org.comp_category')}</label>
+                    <select id="compCategory">
+                    <option>STEM</option>
+                    <option>Language</option>
+                    <option>Arts</option>
+                    <option>Sports</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>${I18N.t('org.comp_date')}</label>
+                    <input type="date" id="compDate" required>
+                </div>
+                </div>
+
+                <div class="grid-2">
+                <div class="form-group">
+                    <label>${I18N.t('org.comp_level')}</label>
+                    <select id="compLevel">
+                    <option value="antarabangsa" data-i18n="level.antarabangsa"></option>
+                    <option value="kebangsaan" selected data-i18n="level.kebangsaan"></option>
+                    <option value="negeri" data-i18n="level.negeri"></option>
+                    <option value="bahagian" data-i18n="level.bahagian"></option>
+                    <option value="zon_daerah" data-i18n="level.zon_daerah"></option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>${I18N.t('org.comp_engagement')}</label>
+                    <select id="compEngagement">
+                    <option value="1" data-i18n="eng.1"></option>
+                    <option value="2" data-i18n="eng.2"></option>
+                    <option value="3" data-i18n="eng.3"></option>
+                    </select>
+                </div>
+                </div>
+
+                <div class="form-group">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem;">
+                    <label style="margin:0;">${I18N.t('org.comp_desc')}</label>
+                    <button type="button" class="btn btn-outline btn-sm" id="aiDescBtn" onclick="openAiDescHelper()">
+                    <i class="fas fa-magic"></i> ${I18N.t('org.ai_desc_btn')}
+                    </button>
+                </div>
+                <textarea id="compDesc" placeholder="Tujuan, syarat, hadiah..."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>${I18N.t('org.comp_url')}</label>
+                    <input
+                        type="url"
+                        id="compUrl"
+                        placeholder="https://..."
+                        pattern="https?://.+"
+                    >
+                    <p class="text-muted" style="font-size:0.78rem;margin-top:0.3rem;">
+                        ${I18N.t('org.comp_url_hint')}
+                    </p>
+                </div>
+
+                <div class="card" style="background:var(--primary-light); border:none; margin:0 0 1rem; padding:1rem 1.2rem;">
+                <div class="flex-between">
+                    <span style="font-weight:600; color:var(--primary);">${I18N.t('org.max_pajsk')}:</span>
+                    <strong id="previewMarks" style="font-size:1.4rem; color:var(--primary);">29</strong>
+                </div>
+                <p class="text-muted" style="margin-top:0.3rem; font-size:0.82rem;">${I18N.t('org.max_pajsk_sub')}</p>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-block">
+                <i class="fas fa-paper-plane"></i> ${I18N.t('common.submit_for_approval')}
+                </button>
+            </form>
+            </div>
+        `;
+        }
+
+        // ============================================================
+        //  ORGANIZER PROFILE MODAL
+        // ============================================================
+        async function openOrganizerProfile() {
+        const fresh = await DB.Users.get(user.email);
+        const lh = fresh?.letterhead || {};
+
+        document.getElementById('organizerProfileModal')?.remove();
+
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-backdrop show';
+        overlay.id = 'organizerProfileModal';
+        overlay.innerHTML = `
+            <div class="modal" style="max-width:640px;">
+            <div class="modal-header">
+                <div>
+                <h3>${I18N.t('org_settings.title')}</h3>
+                <p class="sub">${I18N.t('org_settings.subtitle')}</p>
+                </div>
+                <button class="modal-close" onclick="document.getElementById('organizerProfileModal').remove()">✕</button>
             </div>
 
-            <div class="grid-2">
-              <div class="form-group">
-                <label>${I18N.t('org.comp_category')}</label>
-                <select id="compCategory">
-                  <option>STEM</option>
-                  <option>Language</option>
-                  <option>Arts</option>
-                  <option>Sports</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label>${I18N.t('org.comp_date')}</label>
-                <input type="date" id="compDate" required>
-              </div>
+            <div class="modal-body">
+                <div class="form-group">
+                <label>${I18N.t('org_settings.address')}</label>
+                <textarea id="opAddress" rows="3" style="padding-left:1rem;">${escapeHtml(lh.address || '')}</textarea>
+                </div>
+
+                <div class="grid-2">
+                <div class="form-group">
+                    <label>${I18N.t('org_settings.contact_person')}</label>
+                    <input type="text" id="opContactPerson" value="${escapeHtml(lh.contactPerson || '')}" style="padding-left:1rem;">
+                </div>
+                <div class="form-group">
+                    <label>${I18N.t('org_settings.contact_phone')}</label>
+                    <input type="text" id="opContactPhone" value="${escapeHtml(lh.contactPhone || '')}" style="padding-left:1rem;">
+                </div>
+                </div>
+
+                <div class="form-group">
+                <label>${I18N.t('org_settings.contact_email')}</label>
+                <input type="text" id="opContactEmail" value="${escapeHtml(lh.contactEmail || '')}" style="padding-left:1rem;">
+                </div>
             </div>
 
-            <div class="grid-2">
-              <div class="form-group">
-                <label>${I18N.t('org.comp_level')}</label>
-                <select id="compLevel">
-                  <option value="antarabangsa" data-i18n="level.antarabangsa"></option>
-                  <option value="kebangsaan" selected data-i18n="level.kebangsaan"></option>
-                  <option value="negeri" data-i18n="level.negeri"></option>
-                  <option value="bahagian" data-i18n="level.bahagian"></option>
-                  <option value="zon_daerah" data-i18n="level.zon_daerah"></option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label>${I18N.t('org.comp_engagement')}</label>
-                <select id="compEngagement">
-                  <option value="1" data-i18n="eng.1"></option>
-                  <option value="2" data-i18n="eng.2"></option>
-                  <option value="3" data-i18n="eng.3"></option>
-                </select>
-              </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="document.getElementById('organizerProfileModal').remove()">
+                ${I18N.t('common.cancel')}
+                </button>
+                <button class="btn btn-primary" id="opSaveBtn">
+                <i class="fas fa-save"></i> ${I18N.t('common.save')}
+                </button>
             </div>
-
-            <div class="form-group">
-              <label>${I18N.t('org.comp_desc')}</label>
-              <textarea id="compDesc"></textarea>
             </div>
+        `;
 
-            <div class="card" style="background:var(--primary-light); border:none; margin:0 0 1rem; padding:1rem 1.2rem;">
-              <div class="flex-between">
-                <span style="font-weight:600; color:var(--primary);">${I18N.t('org.max_pajsk')}:</span>
-                <strong id="previewMarks" style="font-size:1.4rem; color:var(--primary);">29</strong>
-              </div>
-              <p class="text-muted" style="margin-top:0.3rem; font-size:0.82rem;">${I18N.t('org.max_pajsk_sub')}</p>
-            </div>
+        document.body.appendChild(overlay);
+        overlay.addEventListener('click', (e) => {
+            if (e.target.id === 'organizerProfileModal') overlay.remove();
+        });
 
-            <button type="submit" class="btn btn-primary btn-block">
-              <i class="fas fa-paper-plane"></i> ${I18N.t('common.submit_for_approval')}
-            </button>
-          </form>
-        </div>
-      `;
+        document.getElementById('opSaveBtn').addEventListener('click', async () => {
+            fresh.letterhead = {
+            address: document.getElementById('opAddress').value.trim(),
+            contactPerson: document.getElementById('opContactPerson').value.trim(),
+            contactPhone: document.getElementById('opContactPhone').value.trim(),
+            contactEmail: document.getElementById('opContactEmail').value.trim()
+            };
+            await DB.Users.put(fresh);
+            overlay.remove();
+            showToast(I18N.t('settings.saved'), 'check-circle');
+        });
+        }
+
+        // ============================================================
+        //  AI DESCRIPTION HELPER
+        // ============================================================
+        function openAiDescHelper() {
+            document.getElementById('aiDescModal')?.remove();
+
+            const overlay = document.createElement('div');
+            overlay.className = 'modal-backdrop show';
+            overlay.id = 'aiDescModal';
+            overlay.innerHTML = `
+                <div class="modal" style="max-width:560px;">
+                <div class="modal-header">
+                    <div>
+                    <h3>${I18N.t('org.ai_desc_title')}</h3>
+                    <p class="sub">${I18N.t('org.ai_desc_subtitle')}</p>
+                    </div>
+                    <button class="modal-close" onclick="document.getElementById('aiDescModal').remove()">✕</button>
+                </div>
+
+                <div class="modal-body">
+                    <div class="form-group">
+                    <label>${I18N.t('org.ai_desc_keywords')}</label>
+                    <textarea id="aiDescKeywords" rows="3" placeholder="${I18N.t('org.ai_desc_keywords_ph')}" style="padding-left:1rem;"></textarea>
+                    </div>
+
+                    <div class="card" style="background:#fafaff;border:1px dashed #d0d0e0;padding:0.9rem 1.1rem;margin:0;">
+                    <p style="font-size:0.85rem;color:var(--text-muted);margin:0;line-height:1.6;">
+                        <i class="fas fa-info-circle"></i>
+                        ${I18N.t('org.ai_desc_info')}
+                    </p>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button class="btn btn-outline" onclick="document.getElementById('aiDescModal').remove()">
+                    ${I18N.t('common.cancel')}
+                    </button>
+                    <button class="btn btn-primary" id="aiDescGenerateBtn">
+                    <i class="fas fa-magic"></i> ${I18N.t('org.ai_desc_generate')}
+                    </button>
+                </div>
+                </div>
+            `;
+
+            overlay.addEventListener('click', (e) => {
+                if (e.target.id === 'aiDescModal') overlay.remove();
+            });
+
+            document.body.appendChild(overlay);
+
+            document.getElementById('aiDescGenerateBtn').addEventListener('click', runAiDescGeneration);
+            }
+
+            async function runAiDescGeneration() {
+            const btn = document.getElementById('aiDescGenerateBtn');
+            const keywordsField = document.getElementById('aiDescKeywords');
+
+            // Pull context from the main form
+            const name = document.getElementById('compName')?.value.trim() || '';
+            const category = document.getElementById('compCategory')?.value || 'STEM';
+            const level = document.getElementById('compLevel')?.value || 'kebangsaan';
+            const engagementType = parseInt(document.getElementById('compEngagement')?.value || '1', 10);
+            const keywords = keywordsField?.value.trim() || '';
+            const lang = I18N.getLanguage();
+
+            if (!name) {
+                showToast(I18N.t('org.ai_desc_need_name'), 'exclamation-circle');
+                return;
+            }
+
+            // Show loading state
+            btn.disabled = true;
+            const original = btn.innerHTML;
+            btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${I18N.t('org.ai_desc_generating')}`;
+
+            try {
+                const { text, aiGenerated } = await AI.aiGenerateCompetitionDescription({
+                name,
+                category,
+                level,
+                engagementType,
+                keywords,
+                lang
+                });
+
+                // Fill the description textarea
+                const descField = document.getElementById('compDesc');
+                if (descField) {
+                descField.value = text;
+                // Flash to indicate update
+                descField.style.transition = 'background 0.4s';
+                descField.style.background = '#f0faf5';
+                setTimeout(() => { descField.style.background = ''; }, 800);
+                }
+
+                // Close modal + toast
+                document.getElementById('aiDescModal')?.remove();
+                showToast(
+                aiGenerated
+                    ? I18N.t('org.ai_desc_applied') + ' · ' + I18N.t('org.ai_desc_ai')
+                    : I18N.t('org.ai_desc_applied') + ' · ' + I18N.t('org.ai_desc_demo'),
+                'check-circle'
+                );
+            } catch (err) {
+                console.error(err);
+                showToast(I18N.t('org.ai_desc_failed'), 'exclamation-circle');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = original;
+            }
         }
 
         async function renderManage() {
@@ -281,118 +520,129 @@
             const allCompleted = regs.length > 0 && regs.every(r => r.status === 'completed');
 
             return `
-        <div class="header">
-          <h1>${I18N.t('org.manage_prefix')} <span>${comp.name}</span></h1>
-          <button class="btn btn-outline btn-sm" onclick="backToEvents()">
-            <i class="fas fa-arrow-left"></i> ${I18N.t('common.back')}
-          </button>
-        </div>
+                <div class="header">
+                <h1>${I18N.t('org.manage_prefix')} <span>${comp.name}</span></h1>
+                <button class="btn btn-outline btn-sm" onclick="backToEvents()">
+                    <i class="fas fa-arrow-left"></i> ${I18N.t('common.back')}
+                </button>
+                </div>
 
-        <div class="card">
-          <h3>${I18N.t('org.comp_details')}</h3>
-          <div class="grid-2">
-            <div><span class="text-muted">${I18N.t('org.level')}:</span> <strong>${DB.levelLabel(comp.level)}</strong></div>
-            <div><span class="text-muted">${I18N.t('org.engagement')}:</span> <strong>${DB.engagementShort(comp.engagementType)}</strong></div>
-            <div><span class="text-muted">${I18N.t('org.comp_date')}:</span> <strong>${comp.date}</strong></div>
-            <div><span class="text-muted">${I18N.t('th.status')}:</span> ${statusBadge(comp.status)}</div>
-            <div><span class="text-muted">${I18N.t('org.participation_score')}:</span> <strong>${comp.participationScore}</strong></div>
-            <div><span class="text-muted">${I18N.t('org.max_achievement')}:</span> <strong>${comp.maxAchievementScore || 0}</strong></div>
-          </div>
-        </div>
+                <div class="card">
+                <h3>${I18N.t('org.comp_details')}</h3>
+                <div class="grid-2">
+                    <div><span class="text-muted">${I18N.t('org.level')}:</span> <strong>${DB.levelLabel(comp.level)}</strong></div>
+                    <div><span class="text-muted">${I18N.t('org.engagement')}:</span> <strong>${DB.engagementShort(comp.engagementType)}</strong></div>
+                    <div><span class="text-muted">${I18N.t('org.comp_date')}:</span> <strong>${comp.date}</strong></div>
+                    <div><span class="text-muted">${I18N.t('th.status')}:</span> ${statusBadge(comp.status)}</div>
+                    <div><span class="text-muted">${I18N.t('org.participation_score')}:</span> <strong>${comp.participationScore}</strong></div>
+                    <div><span class="text-muted">${I18N.t('org.max_achievement')}:</span> <strong>${comp.maxAchievementScore || 0}</strong></div>
+                    <div><span class="text-muted">${I18N.t('org.comp_url')}:</span>
+                    ${comp.url
+                        ? `<a href="${escapeHtml(comp.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(comp.url)}</a>`
+                        : `<span class="text-muted">—</span>`}
+                    </div>
+                </div>
+                </div>
 
-        <div class="card">
-          <div class="card-header">
-            <h3>${I18N.t('org.participants_n')} (${regs.length})</h3>
-            <div class="flex">
-              <button class="btn btn-outline btn-sm" data-export="${comp.id}" ${regs.length === 0 ? 'disabled' : ''}>
-                <i class="fas fa-file-excel"></i> ${I18N.t('common.download_xlsx')}
-              </button>
-              <button class="btn btn-primary btn-sm" data-import="${comp.id}" ${regs.length === 0 ? 'disabled' : ''}>
-                <i class="fas fa-file-upload"></i> ${I18N.t('common.upload_results')}
-              </button>
-            </div>
-          </div>
+                <div class="card">
+                <div class="card-header">
+                    <h3>${I18N.t('org.participants_n')} (${regs.length})</h3>
+                    <div class="flex">
+                    <button class="btn btn-outline btn-sm" data-export="${comp.id}" ${regs.length === 0 ? 'disabled' : ''}>
+                        <i class="fas fa-file-excel"></i> ${I18N.t('common.download_xlsx')}
+                    </button>
+                    <button class="btn btn-primary btn-sm" data-import="${comp.id}" ${regs.length === 0 ? 'disabled' : ''}>
+                        <i class="fas fa-file-upload"></i> ${I18N.t('common.upload_results')}
+                    </button>
+                    </div>
+                </div>
 
-          <input type="file" id="excelUpload" accept=".xlsx,.xls" style="display:none;">
+                <input type="file" id="excelUpload" accept=".xlsx,.xls" style="display:none;">
 
-          ${regs.length === 0
-            ? emptyState(I18N.t('org.no_participants'))
-            : `
-              <div class="card" style="background:#fafaff; border:1px dashed #d0d0e0; padding:1rem 1.2rem; margin-bottom:1.2rem;">
-                <p style="font-size:0.88rem; color:var(--text-muted); margin:0;">
-                  <strong><i class="fas fa-info-circle"></i> ${I18N.t('org.excel_help')}:</strong><br>
-                  ${I18N.t('org.excel_help_1')}<br>
-                  ${I18N.t('org.excel_help_2')}<br>
-                  ${I18N.t('org.excel_help_3')}
-                </p>
-              </div>
+            ${regs.length === 0
+                ? emptyState(I18N.t('org.no_participants'))
+                : `
+                <div class="card" style="background:#fafaff; border:1px dashed #d0d0e0; padding:1rem 1.2rem; margin-bottom:1.2rem;">
+                    <p style="font-size:0.88rem; color:var(--text-muted); margin:0;">
+                    <strong><i class="fas fa-info-circle"></i> ${I18N.t('org.excel_help')}:</strong><br>
+                    ${I18N.t('org.excel_help_1')}<br>
+                    ${I18N.t('org.excel_help_2')}<br>
+                    ${I18N.t('org.excel_help_3')}
+                    </p>
+                </div>
+                <div class="tt-toolbar">
+                    <div class="tt-search">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="orgPartSearch" placeholder="${I18N.t('common.search_students')}">
+                    </div>
+                </div>
 
-              <table>
-                <tr>
-                  <th>${I18N.t('th.student')}</th>
-                  <th>${I18N.t('th.result')}</th>
-                  <th>${I18N.t('th.marks')}</th>
-                  <th></th>
-                </tr>
-                ${regs.map(r => {
-                  const s = studentMap[r.studentEmail];
-                  const p = r.participationScore ?? DB.getParticipationScore(comp.level, comp.engagementType);
-                  const a = r.achievementScore ?? 0;
-                  const total = r.totalPajsk ?? 0;
-                  return `
+                <table id="orgPartTable">
                     <tr>
-                      <td>
-                        <strong>${s?.name || r.studentEmail}</strong>
-                        ${s?.class ? `<br><span class="text-muted" style="font-size:0.8rem;">${s.class}</span>` : ''}
-                      </td>
-                      <td>
-                        <select data-result-select="${r.id}" style="padding:0.5rem 2rem 0.5rem 0.8rem;">
-                          <option value="">${I18N.t('org.set_result')}</option>
-                          ${results.map(x => `
-                            <option value="${x}" ${r.result === x ? 'selected' : ''}>
-                              ${DB.resultLabel(x)}
-                            </option>
-                          `).join('')}
-                        </select>
-                      </td>
-                      <td>
-                        <strong>${total || '—'}</strong>
-                        ${r.result ? `<br><span class="text-muted" style="font-size:0.78rem;">P:${p} + A:${a}</span>` : ''}
-                      </td>
-                      <td>
-                        <button class="btn btn-primary btn-sm" data-save-result="${r.id}">
-                          <i class="fas fa-save"></i> ${I18N.t('common.save')}
-                        </button>
-                      </td>
+                    <th>${I18N.t('th.student')}</th>
+                    <th>${I18N.t('th.result')}</th>
+                    <th>${I18N.t('th.marks')}</th>
+                    <th></th>
                     </tr>
-                  `;
-                }).join('')}
-              </table>
-            `}
-        </div>
-
-        ${allCompleted && comp.status !== 'completed' ? `
-          <div class="card">
-            <h3>${I18N.t('org.submit_report')}</h3>
-            <p class="text-muted" style="margin-bottom:1rem;">${I18N.t('org.submit_report_desc')}</p>
-            <button class="btn btn-success" data-submit-report="${comp.id}">
-              <i class="fas fa-paper-plane"></i> ${I18N.t('org.submit_report')}
-            </button>
-          </div>
-        ` : ''}
-
-        ${comp.status === 'completed' ? `
-          <div class="card" style="background:var(--primary-light); border:none;">
-            <div class="flex-between">
-              <div>
-                <h3 style="margin-bottom:0.3rem;">✅ ${I18N.t('org.report_sent')}</h3>
-                <p class="text-muted">${I18N.t('org.report_sent_desc')}</p>
-              </div>
-              <i class="fas fa-check-circle" style="font-size:2.5rem; color:var(--primary);"></i>
+                    ${regs.map(r => {
+                    const s = studentMap[r.studentEmail];
+                    const p = r.participationScore ?? DB.getParticipationScore(comp.level, comp.engagementType);
+                    const a = r.achievementScore ?? 0;
+                    const total = r.totalPajsk ?? 0;
+                    return `
+                        <tr>
+                        <td>
+                            <strong>${s?.name || r.studentEmail}</strong>
+                            ${s?.class ? `<br><span class="text-muted" style="font-size:0.8rem;">${s.class}</span>` : ''}
+                        </td>
+                        <td>
+                            <select data-result-select="${r.id}" style="padding:0.5rem 2rem 0.5rem 0.8rem;">
+                            <option value="">${I18N.t('org.set_result')}</option>
+                            ${results.map(x => `
+                                <option value="${x}" ${r.result === x ? 'selected' : ''}>
+                                ${DB.resultLabel(x)}
+                                </option>
+                            `).join('')}
+                            </select>
+                        </td>
+                        <td>
+                            <strong>${total || '—'}</strong>
+                            ${r.result ? `<br><span class="text-muted" style="font-size:0.78rem;">P:${p} + A:${a}</span>` : ''}
+                        </td>
+                        <td>
+                            <button class="btn btn-primary btn-sm" data-save-result="${r.id}">
+                            <i class="fas fa-save"></i> ${I18N.t('common.save')}
+                            </button>
+                        </td>
+                        </tr>
+                    `;
+                    }).join('')}
+                </table>
+                `}
             </div>
-          </div>
-        ` : ''}
-      `;
+
+            ${allCompleted && comp.status !== 'completed' ? `
+            <div class="card">
+                <h3>${I18N.t('org.submit_report')}</h3>
+                <p class="text-muted" style="margin-bottom:1rem;">${I18N.t('org.submit_report_desc')}</p>
+                <button class="btn btn-success" data-submit-report="${comp.id}">
+                <i class="fas fa-paper-plane"></i> ${I18N.t('org.submit_report')}
+                </button>
+            </div>
+            ` : ''}
+
+            ${comp.status === 'completed' ? `
+            <div class="card" style="background:var(--primary-light); border:none;">
+                <div class="flex-between">
+                <div>
+                    <h3 style="margin-bottom:0.3rem;">✅ ${I18N.t('org.report_sent')}</h3>
+                    <p class="text-muted">${I18N.t('org.report_sent_desc')}</p>
+                </div>
+                <i class="fas fa-check-circle" style="font-size:2.5rem; color:var(--primary);"></i>
+                </div>
+            </div>
+            ` : ''}
+        `;
         }
 
         function statusBadge(status) {
@@ -863,6 +1113,7 @@
                         organizerName: user.name,
                         category: document.getElementById('compCategory').value,
                         description: document.getElementById('compDesc').value.trim(),
+                        url: document.getElementById('compUrl').value.trim(), // ← ADD
                         date,
                         status: 'pending',
                         level,
@@ -994,6 +1245,33 @@
                     }
                 });
             });
+
+            // ---------- Table tools ----------
+            if (currentTab === 'dashboard' && document.getElementById('orgEventsTable')) {
+                TableTools.attach({
+                    tableSelector: '#orgEventsTable',
+                    searchInput: '#orgEventsSearch',
+                    filters: [{
+                        id: 'orgEventsStatus',
+                        column: 3
+                    }],
+                    emptyMessage: I18N.t('org.no_events')
+                });
+            }
+
+            if (currentTab === 'manage' && document.getElementById('orgPartTable')) {
+                TableTools.attach({
+                    tableSelector: '#orgPartTable',
+                    searchInput: '#orgPartSearch',
+                    emptyMessage: I18N.t('org.no_participants')
+                });
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text || '';
+            return div.innerHTML;
         }
 
         init();

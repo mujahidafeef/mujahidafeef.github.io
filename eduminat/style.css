@@ -1080,3 +1080,49 @@ tr.row-unchanged td {
 #tourDismissBtn {
     margin-top: 0.4rem;
 }
+
+/* ============================================================
+   TABLE TOOLS — search / filter
+   ============================================================ */
+.tt-toolbar {
+    display: flex;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.tt-toolbar .tt-search {
+    flex: 1;
+    min-width: 220px;
+    position: relative;
+}
+
+.tt-toolbar .tt-search input {
+    padding-left: 2.6rem;
+}
+
+.tt-toolbar .tt-search i {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-light);
+    pointer-events: none;
+}
+
+.tt-toolbar select {
+    padding: 0.7rem 2.2rem 0.7rem 1rem;
+    min-width: 160px;
+    font-size: 0.88rem;
+}
+
+.tt-counter {
+    font-size: 0.85rem;
+    color: var(--text-light);
+    margin: 0.6rem 0;
+}
+
+.tt-empty.hidden {
+    display: none;
+}

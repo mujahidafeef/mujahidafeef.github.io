@@ -25,7 +25,19 @@
         <div class="nav-item" data-tab="analytics"><i class="fas fa-chart-bar"></i> <span data-i18n="nav.teacher_analytics"></span></div>
         <div class="nav-item" onclick="openManualMarkModal()"><i class="fas fa-plus-circle"></i> <span data-i18n="nav.manual_mark"></span></div>
         <div class="nav-item" onclick="openBulkImportModal()"><i class="fas fa-file-import"></i> <span data-i18n="nav.bulk_import"></span></div>
-        <div class="nav-item" onclick="DB.resetDemo()"><i class="fas fa-rotate-left"></i> <span data-i18n="nav.reset"></span></div>
+        <div class="nav-item" onclick="openAiSettings()"><i class="fas fa-robot"></i>
+          <span data-i18n="reflect.ai_settings"></span>
+          <span id="aiKeyStatus" style="
+                    margin-left:auto;
+                    font-size:0.7rem;
+                    font-weight:700;
+                    padding:2px 6px;
+                    border-radius:10px;
+                    background:#fff2e0;
+                    color:#b45f06;
+                  ">!</span>
+        </div>
+                <div class="nav-item" onclick="DB.resetDemo()"><i class="fas fa-rotate-left"></i> <span data-i18n="nav.reset"></span></div>
         <div class="nav-item logout" onclick="DB.logout()"><i class="fas fa-sign-out-alt"></i> <span data-i18n="nav.logout"></span></div>
       </nav>
     </aside>
@@ -53,10 +65,13 @@
   <script src="scripts/i18n.js"></script>
   <script src="scripts/tour.js"></script>
   <script src="scripts/db.js"></script>
+  <script src="scripts/ai.js"></script>
+  <script src="scripts/ai-settings.js"></script>
   <script>
     let user = null;
     let currentTab = 'class';
     let selectedClass = 'all'; // 'all' | '5 Alpha' | '4 Beta' | ...
+    let classSearchQuery = '';
 
     document.addEventListener('languagechange', () => {
       I18N.injectLanguageSwitcher();
@@ -845,10 +860,19 @@
       // Collect all unique classes
       const allClasses = [...new Set(allStudents.map(s => s.class).filter(Boolean))].sort();
 
-      // Apply filter
-      const students = selectedClass === 'all' ?
-        allStudents :
-        allStudents.filter(s => s.class === selectedClass);
+      // Apply class filter
+      let students = selectedClass === 'all' ?
+      allStudents :
+      allStudents.filter(s => s.class === selectedClass);
+
+      // Apply search filter
+      if (classSearchQuery) {
+      const q = classSearchQuery.toLowerCase();
+      students = students.filter(s =>
+      s.name.toLowerCase().includes(q) ||
+      s.email.toLowerCase().includes(q)
+      );
+      }
 
       // Compute PAJSK for each student
       const rows = [];
@@ -887,7 +911,7 @@
       return `
         <div class="header">
           <h1>${I18N.t('teacher.title')}</h1>
-          <div class="filter-bar" style="margin:0;">
+          <div class="filter-bar" style="margin:0;gap:0.6rem;">
             <select id="classFilter" style="padding:0.6rem 2.4rem 0.6rem 1rem;min-width:180px;">
               <option value="all" ${selectedClass === 'all' ? 'selected' : ''}>
                 ${I18N.t('teacher.all_classes')} (${allStudents.length})
@@ -899,8 +923,13 @@
                 </option>`;
               }).join('')}
             </select>
+            <button class="btn btn-primary btn-sm" onclick="runClassInsight()">
+              <i class="fas fa-magic"></i> ${I18N.t('teacher.ai_insight_btn')}
+            </button>
           </div>
         </div>
+
+        <div id="aiInsightPanel"></div>
 
         <div class="grid-3">
           <div class="stat">
@@ -920,6 +949,21 @@
           </div>
         </div>
 
+        <!-- Toolbar: search + filters -->
+        <div class="tt-toolbar">
+          <div class="tt-search">
+            <i class="fas fa-search"></i>
+            <input
+              type="text"
+              id="classSearch"
+              placeholder="${I18N.t('common.search_students')}"
+              value="${classSearchQuery || ''}"
+              style="padding-left:2.6rem;"
+            >
+          </div>
+        </div>
+
+        <div id="ttContainer">
         ${Object.keys(grouped).length === 0
           ? `<div class="card"><div class="empty"><i class="fas fa-inbox"></i>${I18N.t('teacher.no_students')}</div></div>`
           : Object.entries(grouped).map(([cls, list]) => {
@@ -978,6 +1022,7 @@
                 </div>
               `;
             }).join('')}
+        </div>
       `;
     }
 
@@ -1279,6 +1324,24 @@
         });
       });
 
+      const search = document.getElementById('classSearch');
+      if (search) {
+        let timer;
+        search.addEventListener('input', (e) => {
+          clearTimeout(timer);
+          timer = setTimeout(() => {
+            classSearchQuery = e.target.value.trim();
+            render();
+            // Re-focus + restore cursor
+            const el = document.getElementById('classSearch');
+            if (el) {
+              el.focus();
+              el.setSelectionRange(el.value.length, el.value.length);
+            }
+          }, 250);
+        });
+      }
+
       // Init charts if we're on the analytics tab
       if (currentTab === 'analytics') initTeacherCharts();
     }
@@ -1296,6 +1359,7 @@
       const pajskData = await DB.calculatePajsk(email);
       const regs = await DB.Registrations.byStudent(email);
       const marks = await DB.Marks.byStudent(email);
+      const reflections = await DB.Reflections.byStudent(email);
       const comps = await DB.Competitions.all();
 
       // Build a modal-like overlay
@@ -1354,6 +1418,27 @@
                     </tr>
                   `).join('')}
                 </table>`}
+            ${reflections.length > 0 ? `
+              <h4 style="margin:1.5rem 0 0.6rem;">${I18N.t('reflect.report_title')} (${reflections.length})</h4>
+              ${reflections.map(r => `
+                <div class="card" style="background:var(--primary-light);border:none;padding:1rem 1.2rem;margin-bottom:0.8rem;">
+                  <div class="flex-between" style="margin-bottom:0.5rem;">
+                    <strong style="color:var(--primary);font-size:0.95rem;">${escapeHtml(r.competitionName)}</strong>
+                    <span class="text-muted" style="font-size:0.75rem;">
+                      ${new Date(r.createdAt).toLocaleDateString(I18N.getLanguage() === 'en' ? 'en-MY' : 'ms-MY', {
+                        day: 'numeric', month: 'short', year: 'numeric'
+                      })}
+                    </span>
+                  </div>
+                  <p style="margin:0 0 0.6rem;font-size:0.88rem;line-height:1.6;white-space:pre-wrap;color:var(--text-muted);">
+                    ${AI.markdownToHtml(r.insights.substring(0, 400))}${r.insights.length > 400 ? '…' : ''}
+                  </p>
+                  <button class="btn btn-outline btn-sm" onclick='showTeacherReflectionDetail(${JSON.stringify(r).replace(/'/g, "\\'")})'>
+                    <i class="fas fa-eye"></i> ${I18N.t('reflect.view')}
+                  </button>
+                </div>
+              `).join('')}
+            ` : ''}
           </div>
           <div class="modal-footer">
             <button class="btn btn-outline" onclick="document.getElementById('studentDetailModal').remove()">
@@ -1386,6 +1471,64 @@
       document.body.appendChild(overlay);
     }
 
+    function showTeacherReflectionDetail(reflection) {
+      document.getElementById('teacherReflectionModal')?.remove();
+
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-backdrop show';
+      overlay.id = 'teacherReflectionModal';
+      overlay.innerHTML = `
+        <div class="modal" style="max-width:680px;">
+          <div class="modal-header">
+            <div>
+              <h3>${I18N.t('reflect.report_title')}</h3>
+              <p class="sub">${escapeHtml(reflection.competitionName)}</p>
+            </div>
+            <button class="modal-close" onclick="document.getElementById('teacherReflectionModal').remove()">✕</button>
+          </div>
+          <div class="modal-body">
+            <h4 style="margin-bottom:0.6rem;">${I18N.t('reflect.insights')}</h4>
+            <div style="
+              background:var(--primary-light);
+              padding:1.2rem 1.4rem;
+              border-radius:12px;
+              font-size:0.92rem;
+              line-height:1.7;
+              white-space:pre-wrap;
+              margin-bottom:1.5rem;
+            ">${AI.markdownToHtml(reflection.insights)}</div>
+
+            <h4 style="margin-bottom:0.6rem;">${I18N.t('reflect.answers')}</h4>
+            <table class="modal-table">
+              ${reflection.questions.map(q => `
+                <tr>
+                  <td style="width:45%;vertical-align:top;padding:0.6rem 0.4rem;">
+                    <strong style="font-size:0.88rem;">${escapeHtml(q.text)}</strong>
+                  </td>
+                  <td style="padding:0.6rem 0.4rem;color:var(--text-muted);font-size:0.9rem;">
+                    ${reflection.answers[q.id]
+                      ? escapeHtml(reflection.answers[q.id])
+                      : `<em>${I18N.t('reflect.not_answered')}</em>`}
+                  </td>
+                </tr>
+              `).join('')}
+            </table>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-outline" onclick="document.getElementById('teacherReflectionModal').remove()">
+              ${I18N.t('common.close')}
+            </button>
+          </div>
+        </div>
+      `;
+
+      overlay.addEventListener('click', (e) => {
+        if (e.target.id === 'teacherReflectionModal') overlay.remove();
+      });
+
+      document.body.appendChild(overlay);
+    }
+
     // ============================================================
     //  HELPERS
     // ============================================================
@@ -1395,6 +1538,101 @@
       t.querySelector('i').className = `fas fa-${icon}`;
       t.classList.add('show');
       setTimeout(() => t.classList.remove('show'), 2200);
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text || '';
+      return div.innerHTML;
+    }
+
+    // ============================================================
+    //  AI CLASS INSIGHT
+    // ============================================================
+    async function runClassInsight() {
+      const panel = document.getElementById('aiInsightPanel');
+      if (!panel) return;
+
+      panel.innerHTML = `
+        <div class="card" style="text-align:center;padding:1.8rem;">
+          <div style="font-size:2rem;color:var(--primary);margin-bottom:0.6rem;">
+            <i class="fas fa-spinner fa-spin"></i>
+          </div>
+          <p class="text-muted">${I18N.t('teacher.ai_insight_loading')}</p>
+        </div>
+      `;
+
+      try {
+        const lang = I18N.getLanguage();
+        const result = await AI.aiClassInsight(selectedClass, lang);
+
+        if (!result || !result.text) {
+          panel.innerHTML = `
+            <div class="card" style="background:#fff5f7;border-color:#ffd5dd;">
+              <p style="color:#c41e3a;margin:0;">
+                <i class="fas fa-exclamation-triangle"></i>
+                ${I18N.t('teacher.ai_insight_failed')}
+              </p>
+            </div>
+          `;
+          return;
+        }
+
+        panel.innerHTML = renderClassInsight(result);
+      } catch (err) {
+        console.error(err);
+        panel.innerHTML = `
+          <div class="card" style="background:#fff5f7;border-color:#ffd5dd;">
+            <p style="color:#c41e3a;margin:0;">
+              <i class="fas fa-exclamation-triangle"></i>
+              ${I18N.t('teacher.ai_insight_failed')}
+            </p>
+          </div>
+        `;
+      }
+    }
+
+    function renderClassInsight(result) {
+      // result.text is markdown-ish; convert to safe HTML
+      const html = AI.markdownToHtml(result.text);
+
+      return `
+        <div class="card" style="background:linear-gradient(135deg,#f5f3ff 0%,#fff 100%);border:1px solid #e0daff;">
+          <div class="flex-between" style="margin-bottom:0.8rem;">
+            <div>
+              <h3 style="margin-bottom:0.2rem;">
+                <i class="fas fa-robot" style="color:var(--primary);"></i>
+                ${I18N.t('teacher.ai_insight_title')}
+              </h3>
+              <p class="text-muted" style="font-size:0.85rem;margin:0;">
+                ${I18N.t('teacher.ai_insight_subtitle')}
+              </p>
+            </div>
+            <button class="btn btn-outline btn-sm" onclick="runClassInsight()">
+              <i class="fas fa-rotate"></i> ${I18N.t('teacher.ai_insight_regenerate')}
+            </button>
+          </div>
+
+          <div style="
+            background:white;
+            border-radius:12px;
+            padding:1.2rem 1.4rem;
+            font-size:0.92rem;
+            line-height:1.7;
+            color:var(--text);
+          ">
+            ${html}
+          </div>
+
+          <div style="margin-top:0.7rem;display:flex;justify-content:flex-end;">
+            <span class="text-muted" style="font-size:0.75rem;">
+              ${result.aiGenerated
+                ? `<i class="fas fa-robot"></i> ${I18N.t('teacher.ai_insight_by_ai')}`
+                : `<i class="fas fa-info-circle"></i> ${I18N.t('teacher.ai_insight_demo')}`}
+            </span>
+          </div>
+        </div>
+      `;
     }
 
     init();
