@@ -1,23 +1,101 @@
 // ============================================================
 //  ai.js — shared AI helper for EduMinat
-//  Uses Google Gemini API. Falls back to demo mode if no key.
+//  Uses Cloudflare Worker proxy. Falls back to demo mode if
+//  the proxy is unavailable.
 // ============================================================
 
 const AI_CONFIG = {
     provider: 'gemini',
-    model: 'gemini-3.5-flash',
-    apiKey: localStorage.getItem('eduminat.ai.key') || ''
+
+    // ---- Cloudflare Worker proxy ----
+    // All AI calls go through this endpoint. The worker holds
+    // the Gemini API key as an encrypted secret on the server.
+    proxyUrl: 'https://eduminat-ai-proxy.eduminat.workers.dev',
+
+    // ---- Optional: user-provided key (bypasses proxy) ----
+    // If a user saves their own Gemini key in AI Settings,
+    // we use it directly instead of the proxy.
+    model: 'gemini-3.5-flash-lite', // Or the model you prefer
+    apiKey: localStorage.getItem('eduminat.ai.key') || '',
+
+    // Set to true if the proxy is down and you want to force
+    // demo mode. Normally this stays false.
+    forceDemoMode: false
 };
 
 // ============================================================
 //  CORE — call the AI
 // ============================================================
 async function aiGenerate(prompt, systemInstruction = '') {
-    if (!AI_CONFIG.apiKey) {
-        return demoFallback(prompt);
+    // 1. If user provided their own key, call Gemini directly
+    if (AI_CONFIG.apiKey) {
+        return await callGeminiDirect(prompt, systemInstruction, AI_CONFIG.apiKey);
     }
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${AI_CONFIG.model}:generateContent?key=${AI_CONFIG.apiKey}`;
+    // 2. Otherwise, use the Cloudflare Worker proxy
+    if (!AI_CONFIG.forceDemoMode) {
+        try {
+            return await callProxy(prompt, systemInstruction);
+        } catch (err) {
+            console.warn('Proxy call failed, falling back to demo mode:', err.message);
+        }
+    }
+
+    // 3. Final fallback: canned demo response
+    return demoFallback(prompt);
+}
+
+// ============================================================
+//  CALL VIA CLOUDFLARE WORKER PROXY
+// ============================================================
+async function callProxy(prompt, systemInstruction = '') {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+    let res;
+    try {
+        res = await fetch(AI_CONFIG.proxyUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                prompt,
+                systemInstruction
+            }),
+            signal: controller.signal
+        });
+    } catch (err) {
+        clearTimeout(timeoutId);
+        if (err.name === 'AbortError') throw new Error('AI request timed out');
+        throw new Error('Network error: ' + err.message);
+    }
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        console.error('Proxy error:', res.status, errText);
+        throw new Error(`Proxy request failed (${res.status})`);
+    }
+
+    const json = await res.json();
+
+    // The worker forwards Gemini's response verbatim
+    if (json.error) {
+        console.error('Proxy returned error:', json.error);
+        throw new Error(json.error.message || 'AI error');
+    }
+
+    const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) throw new Error('Empty AI response');
+    return text.trim();
+}
+
+// ============================================================
+//  CALL GEMINI DIRECTLY (only when user provides their own key)
+// ============================================================
+async function callGeminiDirect(prompt, systemInstruction = '', apiKey) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${AI_CONFIG.model}:generateContent?key=${apiKey}`;
 
     const body = {
         contents: [{
@@ -35,17 +113,29 @@ async function aiGenerate(prompt, systemInstruction = '') {
         };
     }
 
-    const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(body)
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+    let res;
+    try {
+        res = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(body),
+            signal: controller.signal
+        });
+    } catch (err) {
+        clearTimeout(timeoutId);
+        if (err.name === 'AbortError') throw new Error('AI request timed out');
+        throw new Error('Network error: ' + err.message);
+    }
+    clearTimeout(timeoutId);
 
     if (!res.ok) {
         const err = await res.text();
-        console.error('AI API error:', err);
+        console.error('Gemini API error:', err);
         throw new Error('AI request failed');
     }
 
@@ -56,14 +146,12 @@ async function aiGenerate(prompt, systemInstruction = '') {
 }
 
 // ============================================================
-//  DEMO MODE — no API key
+//  DEMO MODE — no key, no proxy
 // ============================================================
 function demoFallback(prompt) {
-    return `_(AI demo mode — no API key configured)_
+    return `_(AI demo mode — proxy unavailable)_
 
-Your reflection has been saved. To enable AI-generated insights, add your Gemini API key in the AI Settings panel.
-
-Here's a sample of what the AI would generate:
+Your reflection has been saved. The AI service is temporarily unavailable, so here is a sample of what would be generated:
 
 **Key strengths observed:** You demonstrated persistence and problem-solving under pressure.
 
@@ -84,13 +172,20 @@ function setAiKey(key) {
     }
 }
 
+// `hasAiKey` now means "is AI available?"
+// True if either the proxy is configured OR the user has a key.
 function hasAiKey() {
+    return !!AI_CONFIG.apiKey || !AI_CONFIG.forceDemoMode;
+}
+
+// Report whether the user has provided their own key
+// (used by the AI Settings panel to show status).
+function hasUserKey() {
     return !!AI_CONFIG.apiKey;
 }
 
 // ============================================================
 //  HIGH-LEVEL: REFLECTION GENERATOR
-//  Takes student info + competition + answers, returns a report.
 // ============================================================
 async function generateReflectionReport({
     studentName,
@@ -120,8 +215,7 @@ Please write a personalized reflection report for this student.`;
 }
 
 // ============================================================
-//  HIGH-LEVEL: SUGGESTED REFLECTION QUESTIONS
-//  (Predefined, but AI can also generate more specific ones.)
+//  SUGGESTED REFLECTION QUESTIONS
 // ============================================================
 const REFLECTION_QUESTIONS = {
     en: [{
@@ -174,27 +268,19 @@ const REFLECTION_QUESTIONS = {
 function markdownToHtml(md) {
     if (!md) return '';
 
-    // 1. Escape HTML first — critical for safety
     let html = md
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
 
-    // 2. Bold: **text** or __text__
     html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
     html = html.replace(/__(.+?)__/g, '<strong>$1</strong>');
-
-    // 3. Italic: *text* (not part of **)
     html = html.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
-
-    // 4. Inline code: `code`
     html = html.replace(/`(.+?)`/g, '<code style="background:#f0f0f5;padding:2px 6px;border-radius:4px;font-family:monospace;font-size:0.9em;">$1</code>');
 
-    // 5. Bullet lists
     html = html.replace(/^\s*[-*]\s+(.+)$/gm, '<li>$1</li>');
     html = html.replace(/(<li>[\s\S]*?<\/li>)/g, '<ul style="margin:0.5rem 0 0.5rem 1.2rem;padding:0;">$1</ul>');
 
-    // 6. Paragraphs and line breaks
     html = html.split(/\n\n+/).map(para => {
         if (para.trim().startsWith('<ul') || para.trim().startsWith('<li')) return para;
         return `<p style="margin:0 0 0.6rem;">${para.replace(/\n/g, '<br>')}</p>`;
@@ -205,11 +291,7 @@ function markdownToHtml(md) {
 
 // ============================================================
 //  NATURAL LANGUAGE QUERY (KPM dashboard)
-//  Translates a user question into a structured filter,
-//  runs it against the data, then narrates the result.
 // ============================================================
-
-// The schema we teach the LLM
 const QUERY_SCHEMA_DOC = `
 You translate Malaysian education-data questions into a JSON filter.
 
@@ -250,38 +332,35 @@ Examples:
 `;
 
 async function aiQuery(question, context = {}) {
-    // If no API key: fall back to a small keyword parser so demo still works
     if (!hasAiKey()) {
         return localKeywordParser(question, context);
     }
 
-    const systemInstruction = `You are a data query translator. You output ONLY valid JSON.`;
-
-    const prompt = `${QUERY_SCHEMA_DOC}
+    try {
+        const systemInstruction = `You are a data query translator. You output ONLY valid JSON.`;
+        const prompt = `${QUERY_SCHEMA_DOC}
 
 User question: "${question}"
 
 Now return the JSON filter.`;
 
-    let raw = await aiGenerate(prompt, systemInstruction);
+        let raw = await aiGenerate(prompt, systemInstruction);
+        raw = raw.replace(/```json\s*/i, '').replace(/```\s*$/, '').trim();
 
-    // Strip markdown code fences if the LLM added them
-    raw = raw.replace(/```json\s*/i, '').replace(/```\s*$/, '').trim();
-
-    let parsed;
-    try {
-        parsed = JSON.parse(raw);
+        try {
+            return JSON.parse(raw);
+        } catch (err) {
+            console.warn('Failed to parse AI filter, falling back:', raw);
+            return localKeywordParser(question, context);
+        }
     } catch (err) {
-        console.warn('Failed to parse AI filter, falling back:', raw);
+        console.warn('aiQuery failed, using fallback parser:', err.message);
         return localKeywordParser(question, context);
     }
-
-    return parsed;
 }
 
 // ============================================================
-//  FALLBACK — keyword parser (no API key needed)
-//  Simple but works for common demo questions.
+//  FALLBACK — keyword parser
 // ============================================================
 function localKeywordParser(q, ctx = {}) {
     const lower = q.toLowerCase();
@@ -291,14 +370,12 @@ function localKeywordParser(q, ctx = {}) {
         filters: {}
     };
 
-    // Students / reports entities
     if (lower.includes('pelajar') || lower.includes('student')) filter.entity = 'students';
     if (lower.includes('laporan') || lower.includes('report')) filter.entity = 'reports';
 
-    // Intent
     if (lower.includes('berapa') || lower.includes('how many') || lower.includes('count')) {
         filter.intent = 'count';
-    } else if (lower.includes('senarai') || lower.includes('list') || lower.includes('show')) {
+    } else if (lower.includes('senarai') || lower.includes('list') || lower.includes('show') || lower.includes('senaraikan')) {
         filter.intent = 'list';
     } else if (lower.includes('purata') || lower.includes('average') || lower.includes('avg')) {
         filter.intent = 'average';
@@ -307,19 +384,16 @@ function localKeywordParser(q, ctx = {}) {
     } else if (lower.includes('teratas') || lower.includes('top')) {
         filter.intent = 'top';
         filter.limit = 5;
-        // If asking about students, sort by PAJSK by default
-        if (lower.includes('pelajar') || lower.includes('student')) {
+        if (filter.entity === 'students') {
             filter.sortBy = 'totalPajsk';
             filter.sortDir = 'desc';
         }
     }
 
-    // Category
     for (const cat of ['STEM', 'Language', 'Arts', 'Sports']) {
         if (lower.includes(cat.toLowerCase())) filter.filters.category = cat;
     }
 
-    // Level
     const levelMap = {
         'antarabangsa': 'antarabangsa',
         'international': 'antarabangsa',
@@ -340,7 +414,6 @@ function localKeywordParser(q, ctx = {}) {
         }
     }
 
-    // Status — support both English and Malay keywords
     const statusMap = {
         'approved': 'approved',
         'diluluskan': 'approved',
@@ -370,17 +443,16 @@ function localKeywordParser(q, ctx = {}) {
 // ============================================================
 async function executeQuery(filter, ctx = {}) {
     const {
-        entity = 'competitions', intent = 'count', filters = {}, field = null, limit = null, sortBy = null, sortDir = 'desc'
+        entity = 'competitions', intent = 'count', filters = {},
+            field = null, limit = null, sortBy = null, sortDir = 'desc'
     } = filter;
 
-      let rows = [];
+    let rows = [];
 
-    // ----- Fetch -----
     if (entity === 'competitions') {
         rows = await Competitions.all();
     } else if (entity === 'students') {
         const rawStudents = await Users.byRole('student');
-        // Enrich each student with computed PAJSK so sorting works
         rows = [];
         for (const s of rawStudents) {
             const p = await calculatePajsk(s.email);
@@ -394,30 +466,15 @@ async function executeQuery(filter, ctx = {}) {
         rows = await Reports.all();
     }
 
-    // ----- Filter -----
-    if (filters.category) {
-        rows = rows.filter(r => (r.category || '').toLowerCase() === filters.category.toLowerCase());
-    }
-    if (filters.level) {
-        rows = rows.filter(r => r.level === filters.level);
-    }
-    if (filters.status) {
-        rows = rows.filter(r => r.status === filters.status);
-    }
-    if (filters.class) {
-        rows = rows.filter(r => (r.class || '').toLowerCase() === filters.class.toLowerCase());
-    }
-    if (filters.month) {
-        // month like "2026-06"
-        rows = rows.filter(r => (r.date || r.submittedAt || '').toString().startsWith(filters.month));
-    }
+    if (filters.category) rows = rows.filter(r => (r.category || '').toLowerCase() === filters.category.toLowerCase());
+    if (filters.level) rows = rows.filter(r => r.level === filters.level);
+    if (filters.status) rows = rows.filter(r => r.status === filters.status);
+    if (filters.class) rows = rows.filter(r => (r.class || '').toLowerCase() === filters.class.toLowerCase());
+    if (filters.month) rows = rows.filter(r => (r.date || r.submittedAt || '').toString().startsWith(filters.month));
 
-    // ----- Sort -----
     if (sortBy) {
-        // Alias sort field depending on entity
         let actualSortBy = sortBy;
         if (entity === 'students') {
-            // AI/parser might say "totalPajskAwarded" — map to the enriched field
             if (sortBy === 'totalPajskAwarded' || sortBy === 'pajsk' || sortBy === 'marks') {
                 actualSortBy = 'totalPajsk';
             }
@@ -426,30 +483,24 @@ async function executeQuery(filter, ctx = {}) {
         rows.sort((a, b) => {
             const av = a[actualSortBy];
             const bv = b[actualSortBy];
-
-            // Handle undefined gracefully — push undefined to the bottom
             if (av === undefined && bv === undefined) return 0;
             if (av === undefined) return 1;
             if (bv === undefined) return -1;
-
             if (sortDir === 'asc') return av > bv ? 1 : -1;
             return av < bv ? 1 : -1;
         });
     }
 
-    // ----- Limit -----
     if (limit && limit > 0) rows = rows.slice(0, limit);
 
-    // ----- Compute -----
-    let result;
     if (intent === 'count') {
-        result = {
+        return {
             count: rows.length
         };
     } else if (intent === 'sum') {
         const f = field || 'participants';
         const total = rows.reduce((s, r) => s + (Number(r[f]) || 0), 0);
-        result = {
+        return {
             total,
             field: f,
             rows: rows.length
@@ -458,82 +509,73 @@ async function executeQuery(filter, ctx = {}) {
         const f = field || 'totalPajskAwarded';
         const vals = rows.map(r => Number(r[f]) || 0);
         const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
-        result = {
+        return {
             average: avg,
             field: f,
             rows: rows.length
         };
     } else if (intent === 'top' || intent === 'list') {
-        result = {
+        return {
             rows: rows.slice(0, limit || 10),
-            count: rows.length, // ← add count so fallback answers work
+            count: rows.length,
             total: rows.length
         };
-    } else {
-        result = {
-            rows,
-            count: rows.length
-        };
     }
-
-    return result;
+    return {
+        rows,
+        count: rows.length
+    };
 }
 
 // ============================================================
 //  ANSWER — turn the result into a natural-language sentence
 // ============================================================
 async function aiAnswer(question, filter, result, lang = 'my') {
-    const langName = lang === 'en' ? 'English' : 'Bahasa Melayu';
-    const systemInstruction = `You are a helpful assistant for the Malaysian Ministry of Education (KPM). Answer questions about their education data. Reply in ${langName}. Be concise — 1-2 sentences. Use numbers from the data.`;
+    if (!hasAiKey()) return fallbackAnswer(result, lang);
 
-    const prompt = `User asked: "${question}"
+    try {
+        const langName = lang === 'en' ? 'English' : 'Bahasa Melayu';
+        const systemInstruction = `You are a helpful assistant for the Malaysian Ministry of Education (KPM). Answer questions about their education data. Reply in ${langName}. Be concise — 1-2 sentences. Use numbers from the data.`;
+
+        const prompt = `User asked: "${question}"
 
 Filter used: ${JSON.stringify(filter)}
 Result: ${JSON.stringify(result)}
 
 Write a 1-2 sentence answer in ${langName}.`;
 
-    if (!hasAiKey()) {
-        const isEN = lang === 'en';
+        return await aiGenerate(prompt, systemInstruction);
+    } catch (err) {
+        console.warn('aiAnswer failed:', err.message);
+        return fallbackAnswer(result, lang);
+    }
+}
 
-        // List/top intent — talk about the rows, not just a count
-        if (Array.isArray(result.rows) && result.rows.length > 0) {
-            const total = result.count ?? result.rows.length;
-            const shown = result.rows.length;
-            return isEN ?
-                `Found ${total} matches. Showing the first ${shown}.` :
-                `Ditemui ${total} padanan. Memaparkan ${shown} pertama.`;
-        }
+function fallbackAnswer(result, lang) {
+    const isEN = lang === 'en';
 
-        // Pure count
-        if (result.count !== undefined && !result.rows) {
-            return isEN ?
-                `There are ${result.count} matching records.` :
-                `Terdapat ${result.count} rekod yang sepadan.`;
-        }
-
-        // Sum
-        if (result.total !== undefined && result.field) {
-            return isEN ?
-                `The total ${result.field} is ${result.total}.` :
-                `Jumlah ${result.field} ialah ${result.total}.`;
-        }
-
-        // Average
-        if (result.average !== undefined) {
-            return isEN ?
-                `The average ${result.field} is ${result.average.toFixed(1)}.` :
-                `Purata ${result.field} ialah ${result.average.toFixed(1)}.`;
-        }
-
-        return isEN ? 'Here are the results.' : 'Berikut adalah hasilnya.';
+    if (Array.isArray(result.rows) && result.rows.length > 0) {
+        const total = result.count ?? result.rows.length;
+        const shown = result.rows.length;
+        return isEN ?
+            `Found ${total} matches. Showing the first ${shown}.` :
+            `Ditemui ${total} padanan. Memaparkan ${shown} pertama.`;
     }
 
-    return await aiGenerate(prompt, systemInstruction);
+    if (result.count !== undefined && !result.rows) {
+        return isEN ? `There are ${result.count} matching records.` : `Terdapat ${result.count} rekod yang sepadan.`;
+    }
+    if (result.total !== undefined && result.field) {
+        return isEN ? `The total ${result.field} is ${result.total}.` : `Jumlah ${result.field} ialah ${result.total}.`;
+    }
+    if (result.average !== undefined) {
+        return isEN ? `The average ${result.field} is ${result.average.toFixed(1)}.` : `Purata ${result.field} ialah ${result.average.toFixed(1)}.`;
+    }
+    return isEN ? 'Here are the results.' : 'Berikut adalah hasilnya.';
 }
 
 // ============================================================
-//  END-TO-END — for one-liner use in the UI
+//  END-TO-END
 // ============================================================
 async function aiNaturalQuery(question, lang = 'my') {
     const filter = await aiQuery(question);
@@ -549,9 +591,7 @@ async function aiNaturalQuery(question, lang = 'my') {
 // ============================================================
 //  AI COMPETITION RECOMMENDATIONS (Student dashboard)
 // ============================================================
-
 async function aiRecommendCompetitions(studentEmail, lang = 'my') {
-    // -------- Gather context --------
     const student = await Users.get(studentEmail);
     if (!student) return [];
 
@@ -560,15 +600,12 @@ async function aiRecommendCompetitions(studentEmail, lang = 'my') {
     const myMarks = await Marks.byStudent(studentEmail);
     const registeredIds = myRegs.map(r => r.competitionId);
 
-    // Available = approved competitions the student hasn't registered for
     const available = allApproved.filter(c => !registeredIds.includes(c.id));
     if (available.length === 0) return [];
 
-    // History summary
     const completedRegs = myRegs.filter(r => r.status === 'completed');
     const categoryCount = {};
     const levelCount = {};
-    let avgResult = 'participation';
 
     for (const r of completedRegs) {
         const c = allApproved.find(x => x.id === r.competitionId) ||
@@ -580,7 +617,6 @@ async function aiRecommendCompetitions(studentEmail, lang = 'my') {
 
     const pajskData = await calculatePajsk(studentEmail);
 
-    // -------- Try AI first --------
     if (hasAiKey()) {
         try {
             const langName = lang === 'en' ? 'English' : 'Bahasa Melayu';
@@ -651,7 +687,6 @@ Return ONLY this JSON shape:
         }
     }
 
-    // -------- Fallback: rule-based recommender --------
     return ruleBasedRecommendations({
         student,
         available,
@@ -662,9 +697,6 @@ Return ONLY this JSON shape:
     });
 }
 
-// ============================================================
-//  RULE-BASED FALLBACK RECOMMENDER
-// ============================================================
 function ruleBasedRecommendations({
     student,
     available,
@@ -689,7 +721,6 @@ function ruleBasedRecommendations({
     const allCategories = ['STEM', 'Language', 'Arts', 'Sports'];
     const untriedCategories = allCategories.filter(c => !triedCategories.includes(c));
 
-    // ---------- Rule 1: a category the student hasn't tried ----------
     if (untriedCategories.length > 0 && picks.length < 3) {
         for (const cat of untriedCategories) {
             const candidate = available.find(c => c.category === cat && !usedIds.has(c.id));
@@ -706,7 +737,6 @@ function ruleBasedRecommendations({
         }
     }
 
-    // ---------- Rule 2: stretch — higher level than their best so far ----------
     if (picks.length < 3 && completedRegs.length > 0) {
         const highestLevelDone = Math.max(
             ...completedRegs.map(r => {
@@ -715,11 +745,7 @@ function ruleBasedRecommendations({
             }),
             0
         );
-
-        const stretch = available.find(c =>
-            !usedIds.has(c.id) && (levelRank[c.level] || 0) > highestLevelDone
-        );
-
+        const stretch = available.find(c => !usedIds.has(c.id) && (levelRank[c.level] || 0) > highestLevelDone);
         if (stretch) {
             picks.push({
                 competition: stretch,
@@ -731,7 +757,6 @@ function ruleBasedRecommendations({
         }
     }
 
-    // ---------- Rule 3: fill with strongest remaining (highest marks promise) ----------
     const remaining = available
         .filter(c => !usedIds.has(c.id))
         .sort((a, b) => {
@@ -756,9 +781,7 @@ function ruleBasedRecommendations({
 
 // ============================================================
 //  AI PARENT SUMMARY
-//  Generates a personalized progress narrative for a child.
 // ============================================================
-
 async function aiParentSummary(studentEmail, lang = 'my') {
     const student = await Users.get(studentEmail);
     if (!student) return null;
@@ -768,7 +791,6 @@ async function aiParentSummary(studentEmail, lang = 'my') {
     const pajskData = await calculatePajsk(studentEmail);
     const reflections = await Reflections.byStudent(studentEmail);
 
-    // -------- Build context --------
     const completedRegs = regs.filter(r => r.status === 'completed');
     const activeRegs = regs.filter(r => r.status === 'registered' || r.status === 'ongoing');
 
@@ -777,11 +799,9 @@ async function aiParentSummary(studentEmail, lang = 'my') {
     const results = [];
 
     for (const m of marks) {
-        const cat = 'Other';
         if (m.competitionName) {
-            // Try to infer category from the actual competition record
             const comp = await Competitions.get(m.competitionId);
-            const c = comp?.category || cat;
+            const c = comp?.category || 'Other';
             categoryWins[c] = (categoryWins[c] || 0) + 1;
         }
         levelWins[m.level] = (levelWins[m.level] || 0) + 1;
@@ -794,7 +814,6 @@ async function aiParentSummary(studentEmail, lang = 'my') {
 
     const topResults = results.filter(r => ['johan', 'naib_johan', 'ketiga'].includes(r.result)).slice(0, 3);
 
-    // -------- Try AI --------
     if (hasAiKey()) {
         try {
             const langName = lang === 'en' ? 'English' : 'Bahasa Melayu';
@@ -817,15 +836,15 @@ async function aiParentSummary(studentEmail, lang = 'my') {
             };
 
             const systemInstruction = `You are a warm, professional Malaysian school advisor writing a progress summary for a parent about their child. Be encouraging but honest. Reply in ${langName}. Structure the response in EXACTLY three short sections with these bold headings on their own lines:
-                **Perkembangan Positif:** (or **What's going well:** in English)
-                **Perlu Perhatian:** (or **What to watch:**)
-                **Cadangan Seterusnya:** (or **What to encourage next:**)
-                Each section should be 1-2 sentences. Keep the total under 180 words.`;
+**Perkembangan Positif:** (or **What's going well:** in English)
+**Perlu Perhatian:** (or **What to watch:**)
+**Cadangan Seterusnya:** (or **What to encourage next:**)
+Each section should be 1-2 sentences. Keep the total under 180 words.`;
 
             const prompt = `Student progress data:
-                ${JSON.stringify(profile, null, 2)}
+${JSON.stringify(profile, null, 2)}
 
-                Write the parent summary now.`;
+Write the parent summary now.`;
 
             const raw = await aiGenerate(prompt, systemInstruction);
             return {
@@ -838,7 +857,6 @@ async function aiParentSummary(studentEmail, lang = 'my') {
         }
     }
 
-    // -------- Fallback: template-based summary --------
     return {
         summary: templateParentSummary({
             student,
@@ -855,9 +873,6 @@ async function aiParentSummary(studentEmail, lang = 'my') {
     };
 }
 
-// ============================================================
-//  TEMPLATE FALLBACK (no key needed)
-// ============================================================
 function templateParentSummary({
     student,
     pajskData,
@@ -873,10 +888,8 @@ function templateParentSummary({
 
     const categories = Object.keys(categoryWins);
     const strongestCat = categories.sort((a, b) => categoryWins[b] - categoryWins[a])[0];
-
     const wins = topResults.length;
 
-    // Section 1 — Positive
     let p1;
     if (wins >= 2) {
         p1 = isEN ?
@@ -892,7 +905,6 @@ function templateParentSummary({
             `**Perkembangan Positif:** ${firstName} telah berdaftar dan bersedia memulakan perjalanan pertandingan. PAJSK asas adalah permulaan yang baik.`;
     }
 
-    // Section 2 — Watch
     let p2;
     const levelCount = Object.keys(levelWins).length;
     if (completedRegs.length > 0 && levelCount === 1) {
@@ -914,7 +926,6 @@ function templateParentSummary({
             `**Perlu Perhatian:** Kemajuan berterusan. Pantau konsistensi — penyertaan berterusan lebih penting daripada kemenangan terpencil.`;
     }
 
-    // Section 3 — Encourage
     const suggestions = [];
     if (!categories.includes('STEM')) suggestions.push(isEN ? 'a STEM competition' : 'pertandingan STEM');
     if (!categories.includes('Arts')) suggestions.push(isEN ? 'an arts event' : 'acara seni');
@@ -938,7 +949,6 @@ function templateParentSummary({
 // ============================================================
 //  AI COMPETITION DESCRIPTION GENERATOR (Organizer)
 // ============================================================
-
 async function aiGenerateCompetitionDescription({
     name,
     category,
@@ -950,27 +960,25 @@ async function aiGenerateCompetitionDescription({
     const levelLabel = (window.DB && DB.levelLabel) ? DB.levelLabel(level) : level;
     const engagementLabel = (window.DB && DB.engagementLabel) ? DB.engagementLabel(engagementType) : engagementType;
 
-    // ---------- AI path ----------
     if (hasAiKey()) {
         try {
             const langName = lang === 'en' ? 'English' : 'Bahasa Melayu';
-
             const systemInstruction = `You are a Malaysian school co-curricular coordinator writing a competition description for a national education platform. Write in ${langName}. Be clear, professional, encouraging to students. Keep it under 120 words, 2 short paragraphs. Do NOT use markdown headings, bold, or bullet points — just plain prose paragraphs.`;
 
             const prompt = `Write a competition description.
 
-                Competition details:
-                - Name: ${name || '(untitled)'}
-                - Category: ${category}
-                - Level: ${levelLabel}
-                - Engagement type: ${engagementLabel}
-                - Extra keywords from organizer: ${keywords || '(none)'}
+Competition details:
+- Name: ${name || '(untitled)'}
+- Category: ${category}
+- Level: ${levelLabel}
+- Engagement type: ${engagementLabel}
+- Extra keywords from organizer: ${keywords || '(none)'}
 
-                Write 2 short paragraphs:
-                1. What the competition is and who it's for
-                2. What participants will gain — skills, exposure, recognition
+Write 2 short paragraphs:
+1. What the competition is and who it's for
+2. What participants will gain — skills, exposure, recognition
 
-                Plain prose only. No headings, no bullet points, no markdown.`;
+Plain prose only. No headings, no bullet points, no markdown.`;
 
             const raw = await aiGenerate(prompt, systemInstruction);
             if (raw && raw.trim().length > 30) {
@@ -984,13 +992,13 @@ async function aiGenerateCompetitionDescription({
         }
     }
 
-    // ---------- Template fallback ----------
     return {
         text: templateCompetitionDescription({
             name,
             category,
             level: levelLabel,
             engagementType: engagementLabel,
+            keywords,
             lang
         }),
         aiGenerated: false
@@ -1002,41 +1010,40 @@ function templateCompetitionDescription({
     category,
     level,
     engagementType,
+    keywords,
     lang
 }) {
     const isEN = lang === 'en';
     const n = name || (isEN ? 'This competition' : 'Pertandingan ini');
+    const kw = (keywords || '').trim();
 
     if (isEN) {
-        return `${n} is a ${level.toLowerCase()}-level ${category} competition open to secondary school students across Malaysia. It offers participants a chance to demonstrate their skills, learn from peers, and earn recognition at the ${level.toLowerCase()} stage. Marks are awarded under the KPM PAJSK framework.
+        const kwLine = kw ? ` The event will focus on ${kw}, giving participants hands-on exposure to real-world challenges.` : '';
+        return `${n} is a ${level.toLowerCase()}-level ${category} competition open to secondary school students across Malaysia.${kwLine} Participants will develop critical thinking, teamwork, and presentation skills, and earn PAJSK credit under the KPM framework.
 
-            Participants will develop critical thinking, teamwork, and presentation skills. Whether you're a first-timer or a seasoned competitor, this is a valuable opportunity to grow and earn PAJSK credit for your co-curricular record.`;
+Whether you're a first-timer or a seasoned competitor, this is a valuable opportunity to grow, learn from peers, and gain recognition at the ${level.toLowerCase()} stage.`;
     }
 
-    return `${n} ialah pertandingan ${category} peringkat ${level.toLowerCase()} yang terbuka kepada pelajar sekolah menengah di seluruh Malaysia. Ia memberi peluang kepada peserta untuk menunjukkan kemahiran, belajar daripada rakan sebaya, dan mendapat pengiktirafan di peringkat ${level.toLowerCase()}. Markah diberikan di bawah kerangka PAJSK KPM.
+    const kwLine = kw ? ` Pertandingan ini akan memberi tumpuan kepada ${kw}, memberikan peserta pengalaman langsung dengan cabaran dunia sebenar.` : '';
+    return `${n} ialah pertandingan ${category} peringkat ${level.toLowerCase()} yang terbuka kepada pelajar sekolah menengah di seluruh Malaysia.${kwLine} Peserta akan membangunkan kemahiran berfikir secara kritis, kerja berpasukan, dan penyampaian, serta memperoleh kredit PAJSK di bawah kerangka KPM.
 
-        Peserta akan membangunkan kemahiran berfikir secara kritis, kerja berpasukan, dan penyampaian. Sama ada anda peserta kali pertama atau berpengalaman, ini peluang berharga untuk berkembang dan memperoleh kredit PAJSK untuk rekod kokurikulum anda.`;
+Sama ada anda peserta kali pertama atau berpengalaman, ini peluang berharga untuk berkembang, belajar daripada rakan sebaya, dan mendapat pengiktirafan di peringkat ${level.toLowerCase()}.`;
 }
 
 // ============================================================
 //  AI CLASS INSIGHT (Teacher dashboard)
-//  Generates a 2-3 paragraph analysis of a class's performance.
 // ============================================================
-
 async function aiClassInsight(classFilter, lang = 'my') {
-    // -------- Gather data --------
     const allStudents = await Users.byRole('student');
     const allComps = await Competitions.all();
     const allRegs = await Registrations.all();
 
-    // Filter to the requested class (or all if filter is 'all')
     const students = classFilter === 'all' ?
         allStudents :
         allStudents.filter(s => s.class === classFilter);
 
     if (students.length === 0) return null;
 
-    // Compute stats per student
     const rows = [];
     for (const s of students) {
         const p = await calculatePajsk(s.email);
@@ -1052,10 +1059,8 @@ async function aiClassInsight(classFilter, lang = 'my') {
         });
     }
 
-    // Aggregate stats
     const classAvg = rows.reduce((s, r) => s + r.pajsk, 0) / rows.length;
 
-    // School-wide average (all students)
     let schoolTotal = 0;
     for (const s of allStudents) {
         const p = await calculatePajsk(s.email);
@@ -1067,7 +1072,6 @@ async function aiClassInsight(classFilter, lang = 'my') {
     const completedCount = rows.filter(r => r.completed > 0).length;
     const inactiveStudents = rows.filter(r => r.active === 0 && r.completed === 0);
 
-    // Determine which categories the class engages with most
     const categoryCounts = {};
     for (const r of rows) {
         for (const reg of r.regs) {
@@ -1077,22 +1081,14 @@ async function aiClassInsight(classFilter, lang = 'my') {
         }
     }
 
-    const sortedCategories = Object.entries(categoryCounts)
-        .sort((a, b) => b[1] - a[1])
-        .map(([cat]) => cat);
-
+    const sortedCategories = Object.entries(categoryCounts).sort((a, b) => b[1] - a[1]).map(([cat]) => cat);
     const strongestCategory = sortedCategories[0] || null;
-    const weakestCategories = ['STEM', 'Language', 'Arts', 'Sports']
-        .filter(c => !categoryCounts[c] || categoryCounts[c] < 2);
-
-    // Top performer
+    const weakestCategories = ['STEM', 'Language', 'Arts', 'Sports'].filter(c => !categoryCounts[c] || categoryCounts[c] < 2);
     const topStudent = [...rows].sort((a, b) => b.pajsk - a.pajsk)[0];
 
-    // -------- Try AI first --------
     if (hasAiKey()) {
         try {
             const langName = lang === 'en' ? 'English' : 'Bahasa Melayu';
-
             const profile = {
                 className: classFilter === 'all' ? 'All Classes' : classFilter,
                 studentCount: students.length,
@@ -1129,7 +1125,6 @@ Write a 3-paragraph analysis for the teacher.`;
         }
     }
 
-    // -------- Fallback: template --------
     return {
         text: templateClassInsight({
             classFilter,
@@ -1170,41 +1165,26 @@ function templateClassInsight({
         (isEN ? `${diff} points above` : `${diff} mata di atas`) :
         (isEN ? `${Math.abs(diff)} points below` : `${Math.abs(diff)} mata di bawah`);
 
-    // Para 1 — performance
     let p1;
     if (isEN) {
         p1 = `${className} has ${students.length} students with an average PAJSK of ${classAvg.toFixed(1)}, which is ${diffLabel} the school-wide average of ${schoolAvg.toFixed(1)}.`;
-        if (topStudent) {
-            p1 += ` ${topStudent.student.name} leads the class with ${topStudent.pajsk.toFixed(1)} PAJSK.`;
-        }
+        if (topStudent) p1 += ` ${topStudent.student.name} leads the class with ${topStudent.pajsk.toFixed(1)} PAJSK.`;
     } else {
         p1 = `${className} mempunyai ${students.length} pelajar dengan purata PAJSK ${classAvg.toFixed(1)}, iaitu ${diffLabel} purata sekolah ${schoolAvg.toFixed(1)}.`;
-        if (topStudent) {
-            p1 += ` ${topStudent.student.name} mendahului kelas dengan ${topStudent.pajsk.toFixed(1)} PAJSK.`;
-        }
+        if (topStudent) p1 += ` ${topStudent.student.name} mendahului kelas dengan ${topStudent.pajsk.toFixed(1)} PAJSK.`;
     }
 
-    // Para 2 — participation
     let p2;
     if (isEN) {
         p2 = `${activeCount} students are currently active in competitions, and ${completedCount} have completed at least one event. `;
-        if (strongestCategory) {
-            p2 += `Engagement is strongest in ${strongestCategory}. `;
-        }
-        if (weakestCategories.length > 0) {
-            p2 += `There is less activity in ${weakestCategories.slice(0, 2).join(' and ')}.`;
-        }
+        if (strongestCategory) p2 += `Engagement is strongest in ${strongestCategory}. `;
+        if (weakestCategories.length > 0) p2 += `There is less activity in ${weakestCategories.slice(0, 2).join(' and ')}.`;
     } else {
         p2 = `${activeCount} pelajar aktif dalam pertandingan, dan ${completedCount} telah menyelesaikan sekurang-kurangnya satu acara. `;
-        if (strongestCategory) {
-            p2 += `Penglibatan paling kukuh dalam ${strongestCategory}. `;
-        }
-        if (weakestCategories.length > 0) {
-            p2 += `Kurang aktiviti dalam ${weakestCategories.slice(0, 2).join(' dan ')}.`;
-        }
+        if (strongestCategory) p2 += `Penglibatan paling kukuh dalam ${strongestCategory}. `;
+        if (weakestCategories.length > 0) p2 += `Kurang aktiviti dalam ${weakestCategories.slice(0, 2).join(' dan ')}.`;
     }
 
-    // Para 3 — action
     let p3;
     if (inactiveStudents.length === 0) {
         p3 = isEN ?
@@ -1212,13 +1192,30 @@ function templateClassInsight({
             `Setiap pelajar menyertai sekurang-kurangnya satu aktiviti — penglibatan cemerlang. Pertimbangkan mencalonkan beberapa untuk pertandingan peringkat lebih tinggi.`;
     } else {
         const names = inactiveStudents.slice(0, 2).map(s => s.student.name).join(', ');
-        const more = inactiveStudents.length > 2 ? (isEN ? ` and ${inactiveStudents.length - 2} more` : ` dan ${inactiveStudents.length - 2} lagi`) : '';
+        const more = inactiveStudents.length > 2 ?
+            (isEN ? ` and ${inactiveStudents.length - 2} more` : ` dan ${inactiveStudents.length - 2} lagi`) :
+            '';
         p3 = isEN ?
             `${inactiveStudents.length} student${inactiveStudents.length > 1 ? 's' : ''} (${names}${more}) haven't participated yet. Consider a low-barrier entry event like a school-level or district-level competition to re-engage them.` :
             `${inactiveStudents.length} pelajar (${names}${more}) belum menyertai sebarang aktiviti. Pertimbangkan acara peringkat sekolah atau daerah sebagai permulaan untuk menarik minat mereka.`;
     }
 
     return `${p1}\n\n${p2}\n\n${p3}`;
+}
+
+async function testAiConnection() {
+    try {
+        const res = await aiGenerate('Say "OK" if you can read this.');
+        return {
+            ok: true,
+            response: res
+        };
+    } catch (err) {
+        return {
+            ok: false,
+            error: err.message
+        };
+    }
 }
 
 // ============================================================
@@ -1228,6 +1225,7 @@ window.AI = {
     aiGenerate,
     setAiKey,
     hasAiKey,
+    hasUserKey,
     generateReflectionReport,
     REFLECTION_QUESTIONS,
     AI_CONFIG,
@@ -1239,5 +1237,6 @@ window.AI = {
     aiRecommendCompetitions,
     aiParentSummary,
     aiGenerateCompetitionDescription,
-    aiClassInsight
+    aiClassInsight,
+    testAiConnection
 };
