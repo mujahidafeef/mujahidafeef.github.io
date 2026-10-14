@@ -654,7 +654,7 @@ ${JSON.stringify(history, null, 2)}
 Available competitions to recommend from:
 ${JSON.stringify(candidates, null, 2)}
 
-Pick the 3 BEST recommendations. Consider:
+Pick the 9 BEST recommendations. Consider:
 1. Broaden exposure — suggest categories the student hasn't tried
 2. Stretch — if they've succeeded at lower levels, suggest higher levels
 3. Balance — mix a safe bet with a challenging option
@@ -662,6 +662,12 @@ Pick the 3 BEST recommendations. Consider:
 Return ONLY this JSON shape:
 [
   { "id": <competition_id>, "reason": "<1 short sentence why this fits>" },
+  { "id": <competition_id>, "reason": "<reason>" },
+  { "id": <competition_id>, "reason": "<reason>" },
+  { "id": <competition_id>, "reason": "<reason>" },
+  { "id": <competition_id>, "reason": "<reason>" },
+  { "id": <competition_id>, "reason": "<reason>" },
+  { "id": <competition_id>, "reason": "<reason>" },
   { "id": <competition_id>, "reason": "<reason>" },
   { "id": <competition_id>, "reason": "<reason>" }
 ]`;
@@ -680,7 +686,7 @@ Return ONLY this JSON shape:
                         } : null;
                     })
                     .filter(Boolean)
-                    .slice(0, 3);
+                    .slice(0, 9);
             }
         } catch (err) {
             console.warn('AI recommendation failed, using rule-based:', err.message);
