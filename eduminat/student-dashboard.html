@@ -180,7 +180,7 @@
       `;
     }
 
-    async function renderBrowse() {
+        async function renderBrowse() {
       const approved      = await DB.Competitions.byStatus('approved');
       const regs          = await DB.Registrations.byStudent(user.email);
       const registeredIds = regs.map(r => r.competitionId);
@@ -189,6 +189,10 @@
         return `<div class="header"><h1>${I18N.t('student.browse_title')}</h1></div>
                 <div class="card">${emptyState(I18N.t('student.browse_empty'))}</div>`;
       }
+
+      // Kumpul kategori & peringkat unik untuk penapis
+      const categories = [...new Set(approved.map(c => c.category).filter(Boolean))];
+      const levels = ['antarabangsa', 'kebangsaan', 'negeri', 'bahagian', 'zon_daerah'];
 
       return `
         <div class="header">
@@ -201,7 +205,23 @@
         <div id="recommendPanel"></div>
 
         <div class="card">
-          <table>
+          <!-- Bar alat carian & penapis -->
+          <div class="tt-toolbar">
+            <div class="tt-search">
+              <i class="fas fa-search"></i>
+              <input type="text" id="browseSearch" placeholder="${I18N.t('common.search_comps')}">
+            </div>
+            <select id="browseCategory">
+              <option value="">${I18N.t('common.all_categories')}</option>
+              ${categories.map(cat => `<option value="${cat}">${cat}</option>`).join('')}
+            </select>
+            <select id="browseLevel">
+              <option value="">${I18N.t('common.all_levels')}</option>
+              ${levels.map(l => `<option value="${DB.levelLabel(l)}">${DB.levelLabel(l)}</option>`).join('')}
+            </select>
+          </div>
+
+          <table id="browseTable">
             <tr>
               <th>${I18N.t('th.competition')}</th>
               <th>${I18N.t('th.level')}</th>
@@ -482,12 +502,12 @@
 
       // ---------- Table tools ----------
       if (currentTab === 'browse' && document.getElementById('browseTable')) {
-        TableTools.attach({
+          TableTools.attach({
           tableSelector: '#browseTable',
           searchInput: '#browseSearch',
           filters: [
-          { id: 'browseCategory', column: 2 },
-          { id: 'browseLevel', column: 1 }
+            { id: 'browseCategory', column: 2 },
+            { id: 'browseLevel', column: 1 }
           ],
           emptyMessage: I18N.t('student.browse_empty')
         });

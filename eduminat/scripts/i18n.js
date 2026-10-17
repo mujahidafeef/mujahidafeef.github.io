@@ -485,6 +485,13 @@ const TRANSLATIONS = {
         'org_settings.contact_phone': 'Contact Phone',
         'org_settings.contact_email': 'Contact Email',
 
+        // Student browse filters
+        'common.search_comps': 'Search competitions...',
+        'common.all_categories': 'All categories',
+        'common.all_levels': 'All levels',
+        'th.link': 'Link',
+        'th.open_link': 'Open link',
+
     },
 
     // ============================================================
@@ -958,6 +965,13 @@ const TRANSLATIONS = {
         'org_settings.contact_person': 'Orang Hubungan',
         'org_settings.contact_phone': 'Telefon Hubungan',
         'org_settings.contact_email': 'E-mel Hubungan',
+
+        // Student browse filters
+        'common.search_comps': 'Cari pertandingan...',
+        'common.all_categories': 'Semua kategori',
+        'common.all_levels': 'Semua peringkat',
+        'th.link': 'Pautan',
+        'th.open_link': 'Buka pautan',
         
 
     }
